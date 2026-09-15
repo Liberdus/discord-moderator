@@ -1,0 +1,38 @@
+# Local credentials and deployment settings
+.env
+.env.*
+!.env.example
+config.local.toml
+secrets/
+*.pem
+*.key
+
+# Moderation state and recovery copies
+state/
+backups/
+snapshots/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+
+# Python environments, build products, and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+.coverage
+htmlcov/
+
+# Local editor and OS state
+.DS_Store
+.idea/
+.vscode/
