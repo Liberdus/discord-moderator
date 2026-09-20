@@ -228,6 +228,10 @@ All three records have `outcome: ok`. Lifetime accounting records three attempts
 
 Before allowing JEV to influence reports or actions, review a broader set of manually labeled examples and disagreements, including ordinary discussion, mixed/unclear intent, multilingual messages and adversarial instructions. Wider message scanning, production-channel access and enforcement remain separate decisions. The developer recorded the supplied results without accessing credentials, sending Discord messages, calling TypeSafe or restarting the gateway.
 
+## Automated batch evaluation
+
+The selected next step is implemented as a [standalone JEV batch runner](jev-batch.md). One command evaluates ten synthetic incident examples with the existing profile key and prints a summary. It shares the live worker's daily/total call and spending caps; batch attempts therefore appear in the AI-attempt total, while their results are kept outside moderation incidents. Saved attempts are reused on repeated runs. No browser, extra Discord bot, plugin replacement or restart is needed. The owner-run real batch remains pending; development checks used mocked provider responses.
+
 ## Validation and limits
 
 Tests use synthetic events and mocked provider/Discord network edges. They cover default-off key isolation, strict configuration/response validation, immutable evidence binding, budgets/restart accounting, cancellation, stale results, private key storage, and uninterrupted rule reports while a provider call waits. No paid JEV call or live Discord acceptance test was run during implementation.

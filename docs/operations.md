@@ -2,6 +2,8 @@
 
 Status: September 20, 2026. This guide describes the offline CLI and core. The owner has verified the live report path, edit/deletion handling, command transitions, wrong-channel rejection, ignored DMs, and restart recovery, and received 9/9 from the installed synthetic self-test. The unauthorized-member live check is explicitly deferred; other unconfirmed cases remain recorded in [live-pilot.md](live-pilot.md). The operator supplied three successful [JEV shadow comparisons](jev.md#initial-trial-complete): announcement, promotion and quoted warning all matched. Local accounting records three attempts and the supplied mode remains shadow. The initial trial is complete; broader accuracy and production readiness remain unverified. The owner confirmed the 0.3.2 private saved-JEV lookup. The owner subsequently supplied the [0.3.3 formatted incident reply](incident-review.md), confirming the narrow ASCII layout and retained result. Enforcement stays disabled. The historical build plan is not an installation record.
 
+The optional [JEV batch runner](jev-batch.md) is a separate owner-run utility for real provider evaluation of synthetic examples. It adds a batch-results table and shares the existing classifier budget counters in the profile database. It does not modify moderation evidence, policy or reports and needs no gateway restart.
+
 ## Environment and configuration
 
 Use Python 3.11 or newer. The core and fixture CLI use the Python standard library; the optional adapter uses the verified existing Hermes and Discord libraries. Run the documented commands from the repository root or install the package in a virtual environment. `python3 -m liberdus_moderator --help` lists local CLI commands.
