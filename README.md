@@ -1,8 +1,8 @@
 # Liberdus Discord Moderator
 
-An initial **offline, report-only moderation core** for a planned Hermes plugin. It accepts synthetic Discord-shaped events, applies deterministic rules, and records evidence, review incidents, and pending private-report payloads in SQLite. It has no runtime dependencies and makes no AI or Discord calls.
+An initial **offline, report-only moderation core** for a planned Hermes plugin. It accepts synthetic Discord-shaped events, applies deterministic rules, and records evidence, review incidents, and pending private-report payloads in SQLite. The moderation core has no runtime dependencies and makes no AI or Discord calls. A separate, explicitly invoked preflight utility makes read-only Discord API requests to verify setup.
 
-**Status, September 15, 2026:** implementation has started; live integration is not complete. The user reports obtaining Discord permissions, but the bot identity, installation, effective channel permissions, intents, and event/delivery paths still need verification. An existing Hermes gateway runs under a separate VPS account; this repository does not install or launch another gateway. See [integration notes](docs/integration.md).
+**Status, September 20, 2026:** the operator supplied the pilot IDs and created the `liberdus-mod` Hermes profile. Its token was moved into that profile, and stock Discord remains disabled in both profiles. The pilot configuration validates locally; live bot identity, channel permissions, intents, event ingestion, and report delivery remain unverified. See [preflight instructions](docs/preflight.md) and [integration notes](docs/integration.md).
 
 ## Current flow
 
@@ -37,7 +37,7 @@ The future Hermes adapter will supply events and deliver approved private report
 
 ## Try it locally
 
-Use Python 3.12 or newer, from this repository's root. No package installation is needed for these commands:
+Use Python 3.11 or newer, from this repository's root. No package installation is needed for these commands:
 
 ```bash
 python3 -m liberdus_moderator validate \
@@ -98,7 +98,7 @@ The offline work advances part of Phase 5 while Phase 4 integration verification
 python3 -m unittest discover -s tests -v
 ```
 
-The inactive [CI template](docs/ci-workflow.yml) runs the tests and fixture commands on Python 3.12 and 3.13, with read-only repository permissions and no secrets. Local validation passed on Python 3.12; GitHub CI is not enabled yet because the current GitHub CLI login lacks the separate `workflow` scope. Once authorized, move the template to `.github/workflows/ci.yml`. See [operations](docs/operations.md), [recovery](docs/recovery.md), and [integration](docs/integration.md).
+The inactive [CI template](docs/ci-workflow.yml) runs the tests and fixture commands on Python 3.11, 3.12, and 3.13, with read-only repository permissions and no secrets. All 77 local tests passed on Python 3.11.16 and 3.12.3; GitHub CI is not enabled yet because the current GitHub CLI login lacks the separate `workflow` scope. Once authorized, move the template to `.github/workflows/ci.yml`. See [operations](docs/operations.md), [recovery](docs/recovery.md), and [integration](docs/integration.md).
 
 [BUILD_PLAN.md](docs/BUILD_PLAN.md) is a verbatim historical planning baseline. Its original status statements and local workstation links are preserved; this README and the operations guide describe current implementation status. It also records feature ideas from Sentinel AI, Defender/Warden, Zeppelin, Modcord, and Omnicord. This initial core is independently implemented; no third-party bot source has been imported.
 

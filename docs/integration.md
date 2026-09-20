@@ -1,5 +1,20 @@
 # Hermes integration evidence and next steps
 
+## September 20 operator-reported checkpoint
+
+This checkpoint supersedes unknowns in the September 15 inventory below; the older source review is retained as historical evidence.
+
+- Installed Hermes: v0.21.3, upstream `c1488ac9` (full upstream SHA `c1488ac947c9bc33fd65ec464548dc9d8edd6122`), Python 3.11.16, source under `/home/hermes/.hermes/hermes-agent`. The matching public upstream archive has been obtained for review; local installation modifications have not been inspected.
+- Dedicated profile created at `/home/hermes/.hermes/profiles/liberdus-mod`. The owner-run transfer helper moved the bot token from default to this profile, retained a numeric operator allowlist, disabled allow-all settings, and made protected backups. No token is stored in this repository.
+- `platforms.discord.enabled` is false in both profiles. The owner restarted the shared user gateway, now PID 814234 serving default and liberdus-mod. Telegram's runtime status belongs to that PID. The recorded Discord connection belongs to old PID 800855 and is stale, not a live connection probe.
+- The operator supplied the server, bot, three test-channel, private command-channel, and operator IDs. They are saved in ignored `config.local.toml`, with AI, enforcement, and optional logs disabled. Numeric validation is not identity verification.
+- The core and preflight tests pass on Python 3.11.16 and 3.12.3 (77 tests). The package now accepts Python >=3.11. This is compatibility evidence for this package, not evidence of successful loading into Hermes.
+- The separate [read-only preflight](preflight.md) checks token identity, guild membership, text-channel scope, and effective permissions without reading or sending messages or starting a gateway. Its live output remains pending.
+
+Still required: verify the exact installed plugin interface, implement the event/report adapter with no conversational fallback, verify intents and channel access, and complete the Phase 4 live tests below. No live moderation adapter or report sender has been installed by this checkpoint.
+
+## Historical September 15 review
+
 Checked: September 15, 2026. This document records a read-only VPS inventory and a review of public upstream source. It does **not** certify the installed Hermes version or mark Phase 4 of `BUILD_PLAN.md` complete. The repository's offline harness work can proceed with synthetic events; live Discord testing remains gated on the integration proof below.
 
 ## VPS inventory
