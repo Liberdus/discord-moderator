@@ -208,6 +208,50 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(client.intents.members)
         await client.close()
 
+    async def test_shadow_provider_wait_cannot_block_rule_report_or_call_hermes(self):
+        from dataclasses import replace
+        from liberdus_moderator.classifier import ShadowClassifier, RUBRIC
+        from liberdus_moderator.config import ClassifierSettings
+        self.adapter.policy = replace(self.adapter.policy, schema_version=2, ai_enabled=True,
+            classifier=ClassifierSettings(mode="shadow", max_daily_calls=10, max_total_calls=10,
+                daily_budget_microusd=50000, total_budget_microusd=50000))
+        self.adapter.live = LiveSession(Engine(self.adapter.policy, self.adapter.store))
+        started, release = asyncio.Event(), asyncio.Event()
+        async def blocked(payload):
+            started.set()
+            await release.wait()
+            return {"model": "jev-1.13.0", "answers": {"context": {"type": "choice", "choice": "promotion",
+                "probabilities": {key: 0.8 if key == "promotion" else 0.05 for key in RUBRIC["criteria"]}, "confidence": 0.8}},
+                "usage": {"input_tokens": 500, "output_tokens": 20}}
+        self.adapter.classifier = ShadowClassifier(self.adapter.live.engine, blocked,
+            active=lambda: self.adapter.online and not self.adapter.closing)
+        self.adapter.classifier.start()
+        self.adapter.handle_message = AsyncMock()
+        for i, channel in enumerate((10, 11, 12)):
+            self.adapter.receive(self.message(100+i, channel))
+        await self.drain()
+        await asyncio.wait_for(started.wait(), 1)
+        self.channel.send.assert_awaited_once()
+        self.assertEqual(self.adapter.store.db.execute("SELECT status FROM reports").fetchone()[0], "sent")
+        self.adapter.handle_message.assert_not_called()
+        self.adapter.deleted(1, 10, [100])
+        release.set()
+        await asyncio.wait_for(self.adapter.classifier.queue.join(), 1)
+        record = self.adapter.store.db.execute("SELECT outcome, result_json FROM classifier_attempts").fetchone()
+        self.assertEqual(record["outcome"], "stale")
+        self.assertNotIn("choice", record["result_json"])
+
+    async def test_jev_key_uses_current_profile_and_does_not_borrow_default_key(self):
+        from agent.secret_scope import set_secret_scope, reset_secret_scope
+        with patch.dict("os.environ", {"TYPESAFE_API_KEY": "default-fake-key"}), patch("liberdus_moderator.jev.evaluate", new_callable=AsyncMock) as provider:
+            for scope, expected in ((None, None), ({}, None), ({"TYPESAFE_API_KEY": "profile-fake-key"}, "profile-fake-key"), ({}, None)):
+                token = set_secret_scope(scope)
+                try:
+                    await self.adapter.evaluate_jev(b"{}")
+                    self.assertEqual(provider.call_args.args[1], expected)
+                finally:
+                    reset_secret_scope(token)
+
     async def test_disabled_start_never_logs_into_discord(self):
         fresh = ModerationAdapter(PlatformConfig(enabled=False))
         fresh._set_fatal_error = Mock()

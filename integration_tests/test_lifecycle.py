@@ -63,9 +63,11 @@ database_path = "{self.profile}/state/moderation.sqlite3"
     async def test_start_readiness_same_process_lock_and_clean_shutdown(self):
         first = self.adapter()
         second = self.adapter()
-        with patch("liberdus_moderator.hermes_adapter.verify_runtime"), patch("liberdus_moderator.hermes_adapter.get_scoped_secret", return_value="fake-token"), patch("liberdus_moderator.hermes_adapter.PilotClient", side_effect=self.fake_client):
+        with patch("liberdus_moderator.hermes_adapter.verify_runtime"), patch("liberdus_moderator.hermes_adapter.get_scoped_secret", return_value="fake-token") as secrets, patch("liberdus_moderator.hermes_adapter.PilotClient", side_effect=self.fake_client):
             self.assertTrue(await first.connect())
             self.assertTrue(first.online)
+            self.assertIsNone(first.classifier)
+            secrets.assert_called_once_with("DISCORD_BOT_TOKEN", None)
             first.client.login.assert_awaited_once_with("fake-token")
             self.assertFalse(await second.connect())
             self.assertIsNone(second.store)
@@ -74,6 +76,28 @@ database_path = "{self.profile}/state/moderation.sqlite3"
             self.assertIsNone(first.store)
             self.assertIsNone(first.lock_fd)
             first._release_platform_lock.assert_called_once()
+
+    async def test_shadow_worker_lifecycle_and_disk_policy_stop_gate(self):
+        from dataclasses import replace
+        from liberdus_moderator.config import Config, ClassifierSettings
+        from liberdus_moderator.configure_jev import policy_text
+        path = self.profile / "moderation.toml"
+        policy = replace(Config.from_file(path), schema_version=2, ai_enabled=True,
+            classifier=ClassifierSettings(mode="shadow", max_daily_calls=10, max_total_calls=10,
+                daily_budget_microusd=50000, total_budget_microusd=50000))
+        path.write_text(policy_text(policy))
+        adapter = self.adapter()
+        with patch("liberdus_moderator.hermes_adapter.verify_runtime"), patch("liberdus_moderator.hermes_adapter.get_scoped_secret", return_value="fake-token"), patch("liberdus_moderator.hermes_adapter.PilotClient", side_effect=self.fake_client):
+            self.assertTrue(await adapter.connect())
+            self.assertIsNotNone(adapter.classifier)
+            self.assertFalse(adapter.classifier.task.done())
+            self.assertTrue(adapter.classifier_active())
+            disabled = replace(policy, ai_enabled=False, classifier=replace(policy.classifier, mode="off"))
+            path.write_text(policy_text(disabled))
+            self.assertFalse(adapter.classifier_active())
+            await adapter.disconnect()
+            self.assertIsNone(adapter.classifier)
+            self.assertIsNone(adapter.store)
 
     async def test_bad_token_identity_closes_before_receiving(self):
         adapter = self.adapter()

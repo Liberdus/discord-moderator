@@ -1,4 +1,4 @@
-"""Fail-closed, versioned TOML configuration for the offline report-only core."""
+"""Fail-closed, versioned TOML configuration for report-only moderation and optional shadow classification."""
 
 from __future__ import annotations
 
@@ -111,6 +111,41 @@ class StorageSettings:
 
 
 @dataclass(frozen=True)
+class ClassifierSettings:
+    provider: str = "jev"
+    mode: str = "off"
+    model: str = "jev-1.13.0"
+    max_daily_calls: int = 0
+    max_total_calls: int = 0
+    daily_budget_microusd: int = 0
+    total_budget_microusd: int = 0
+    max_request_bytes: int = 12000
+    max_evidence_messages: int = 32
+    queue_capacity: int = 20
+    timeout_seconds: int = 3
+    min_interval_seconds: int = 6
+
+    def __post_init__(self):
+        if self.provider != "jev" or self.model != "jev-1.13.0":
+            raise ValueError("Only the reviewed JEV provider and pinned jev-1.13.0 model are supported")
+        if self.mode not in ("off", "shadow"):
+            raise ValueError("classifier.mode must be off or shadow; report annotation is not implemented")
+        bounds = {
+            "max_daily_calls": (0, 10000), "max_total_calls": (0, 100000),
+            "daily_budget_microusd": (0, 10000000), "total_budget_microusd": (0, 100000000),
+            "max_request_bytes": (2048, 16000), "max_evidence_messages": (1, 100),
+            "queue_capacity": (1, 100), "timeout_seconds": (1, 10), "min_interval_seconds": (1, 3600),
+        }
+        for name, (low, high) in bounds.items():
+            value = getattr(self, name)
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f"classifier.{name} must be an integer between {low} and {high}")
+        if self.mode == "shadow" and any(getattr(self, name) <= 0 for name in (
+                "max_daily_calls", "max_total_calls", "daily_budget_microusd", "total_budget_microusd")):
+            raise ValueError("Shadow classification requires explicit positive call and spending limits")
+
+
+@dataclass(frozen=True)
 class Config:
     guild_id: str
     bot_user_id: str
@@ -127,10 +162,11 @@ class Config:
     schema_version: int = 1
     ai_enabled: bool = False
     actions_enabled: bool = False
+    classifier: ClassifierSettings = field(default_factory=ClassifierSettings)
 
     def __post_init__(self) -> None:
-        if type(self.schema_version) is not int or self.schema_version != 1:
-            raise ValueError("only schema_version = 1 is supported")
+        if type(self.schema_version) is not int or self.schema_version not in (1, 2):
+            raise ValueError("only schema_version 1 and 2 are supported")
         validate_id(self.guild_id, "guild_id")
         validate_id(self.bot_user_id, "bot_user_id")
         for name in ("monitored_channel_ids", "command_channel_ids", "operator_user_ids", "operator_role_ids"):
@@ -151,8 +187,16 @@ class Config:
         for name in ("logs_enabled", "ai_enabled", "actions_enabled"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be a boolean")
-        if self.ai_enabled or self.actions_enabled:
-            raise ValueError("AI and enforcement must remain disabled in this offline build")
+        if not isinstance(self.classifier, ClassifierSettings):
+            raise ValueError("classifier must use validated settings")
+        if self.actions_enabled:
+            raise ValueError("Enforcement is not implemented")
+        if self.schema_version == 1 and (self.ai_enabled or self.classifier != ClassifierSettings()):
+            raise ValueError("Schema 1 remains code-only; migrate explicitly to schema 2 for JEV")
+        if self.ai_enabled != (self.classifier.mode == "shadow"):
+            raise ValueError("ai_enabled must be true exactly when classifier.mode is shadow")
+        if self.ai_enabled and self.mode != "report_only":
+            raise ValueError("Shadow classification requires report_only moderation")
         if self.logs_enabled and self.log_channel_id is None:
             raise ValueError("logs_enabled requires log_channel_id")
         if not isinstance(self.rules, RuleSettings) or not isinstance(self.storage, StorageSettings):
@@ -165,17 +209,22 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Config:
-        root_keys = {"schema_version", "policy_version", "mode", "logs_enabled", "ai_enabled", "actions_enabled", "scope", "rules", "storage"}
+        root_keys = {"schema_version", "policy_version", "mode", "logs_enabled", "ai_enabled", "actions_enabled", "scope", "rules", "storage", "classifier"}
         _object(data, "configuration", root_keys)
         for required in ("schema_version", "policy_version", "scope"):
             if required not in data:
                 raise ValueError(f"missing configuration field: {required}")
+        if data["schema_version"] == 1 and "classifier" in data:
+            raise ValueError("classifier requires an explicit schema_version = 2 migration")
+        if data["schema_version"] == 2 and "classifier" not in data:
+            raise ValueError("Schema 2 requires an explicit classifier table")
         scope_keys = {"guild_id", "bot_user_id", "monitored_channel_ids", "command_channel_ids", "operator_user_ids", "operator_role_ids", "log_channel_id"}
         scope = _object(data["scope"], "scope", scope_keys)
-        kwargs = {key: value for key, value in data.items() if key not in ("scope", "rules", "storage")}
+        kwargs = {key: value for key, value in data.items() if key not in ("scope", "rules", "storage", "classifier")}
         kwargs.update(scope)
         kwargs["rules"] = _construct(RuleSettings, data.get("rules", {}), "rules")
         kwargs["storage"] = _construct(StorageSettings, data.get("storage", {}), "storage")
+        kwargs["classifier"] = _construct(ClassifierSettings, data.get("classifier", {}), "classifier")
         return _construct(cls, kwargs, "configuration")
 
     @classmethod
@@ -186,5 +235,8 @@ class Config:
     @property
     def policy_hash(self) -> str:
         # Bind persisted decisions to the entire effective configuration, including scope.
-        encoded = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        data = asdict(self)
+        if self.schema_version == 1:
+            del data["classifier"]  # Preserve existing schema-1 policy hashes and persisted evidence.
+        encoded = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

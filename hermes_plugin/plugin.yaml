@@ -1,6 +1,6 @@
 name: liberdus-moderator
 label: Liberdus Moderation
 kind: platform
-version: 0.2.0
-description: Explicitly enabled code-only, report-only Discord moderation for the Liberdus test pilot.
+version: 0.3.0
+description: Explicitly enabled report-only Discord moderation with optional incident-only JEV shadow evaluation.
 author: Liberdus

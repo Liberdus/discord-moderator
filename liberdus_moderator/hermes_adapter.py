@@ -1,4 +1,4 @@
-"""Version-pinned, code-only Hermes platform adapter. No conversational dispatch."""
+"""Version-pinned, report-only Hermes platform adapter. No conversational dispatch."""
 
 import asyncio
 import contextlib
@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 
 import discord
+from agent.secret_scope import current_secret_scope
 from gateway.config import Platform, load_gateway_config
 from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms._shared import get_scoped_secret
@@ -91,6 +92,9 @@ class ModerationAdapter(BasePlatformAdapter):
         self.client = None
         self.store = self.live = self.policy = None
         self.worker = self.receiver = None
+        self.classifier = None
+        self.processing_evidence = False
+        self.classifier_candidates = set()
         self.queue = asyncio.Queue(maxsize=200)
         self.ready_event = asyncio.Event()
         self.generation = 0
@@ -141,6 +145,10 @@ class ModerationAdapter(BasePlatformAdapter):
             await asyncio.wait_for(self.client.login(token), timeout=20)
             if str(self.client.user.id) != self.policy.bot_user_id:
                 raise ValueError("Bot identity mismatch")
+            if self.policy.classifier.mode == "shadow":
+                from .classifier import ShadowClassifier
+                self.classifier = ShadowClassifier(self.live.engine, self.evaluate_jev, active=self.classifier_active)
+                self.classifier.start()
             self.worker = asyncio.create_task(self.run_worker())
             self.receiver = asyncio.create_task(self.run_receiver())
             waiter = asyncio.create_task(self.ready_event.wait())
@@ -160,6 +168,32 @@ class ModerationAdapter(BasePlatformAdapter):
             self._set_fatal_error("liberdus_startup_failed", "Moderation startup failed; check the pinned runtime, profile activation, bot intents, and private-channel access.", retryable=False)
             await self.disconnect()
             return False
+
+    def classifier_active(self):
+        # A disk flag/policy change stops new requests and invalidates late results
+        # even before a gateway restart. Never fetch another profile's key here.
+        if not self.online or self.closing or not self.queue.empty() or self.processing_evidence:
+            return False
+        try:
+            path = get_hermes_home() / "moderation.toml"
+            return (not path.is_symlink() and explicit_activation()
+                    and Config.from_file(path).policy_hash == self.policy.policy_hash)
+        except (OSError, ValueError, TypeError):
+            return False
+
+    async def evaluate_jev(self, payload):
+        from .jev import evaluate
+        # The generic helper permits process-env fallback outside multiplexing.
+        # JEV must always use only this adapter task's installed profile scope.
+        secrets = current_secret_scope()
+        key = secrets.get("TYPESAFE_API_KEY") if secrets is not None else None
+        return await evaluate(payload, key, self.policy.classifier.timeout_seconds)
+
+    def process_evidence(self, evidence):
+        result = self.live.engine.process(evidence)
+        if self.classifier is not None:
+            self.classifier_candidates.update(result["incident_ids"])
+        return result
 
     async def run_receiver(self):
         try:
@@ -210,6 +244,7 @@ class ModerationAdapter(BasePlatformAdapter):
 
     def coverage_gap(self, reason):
         self.generation += 1
+        self.classifier_candidates.clear()
         while not self.queue.empty():
             self.queue.get_nowait()
             self.queue.task_done()
@@ -292,8 +327,9 @@ class ModerationAdapter(BasePlatformAdapter):
                     if generation != self.generation or not self.online:
                         continue
                     if kind == "message":
-                        self.live.engine.process(value)
+                        self.process_evidence(value)
                     elif kind == "edit":
+                        self.processing_evidence = True
                         try:
                             channel = self.checked_channel(value[0])
                             message = await asyncio.wait_for(channel.fetch_message(value[1]), timeout=8)
@@ -301,11 +337,13 @@ class ModerationAdapter(BasePlatformAdapter):
                             if evidence.channel_id != value[0] or evidence.message_id != str(value[1]):
                                 raise ValueError("Fetched edit identity mismatch")
                             if generation == self.generation and self.online:
-                                result = self.live.engine.process(evidence)
+                                result = self.process_evidence(evidence)
                                 if result["reason"] == "conflicting_event_version":
                                     self.coverage_gap("unavailable_edit")
                         except (discord.HTTPException, ValueError, TypeError, AttributeError, TimeoutError):
                             self.coverage_gap("unavailable_edit")
+                        finally:
+                            self.processing_evidence = False
                         # One bounded fetch at a time, at most four per second.
                         await asyncio.sleep(0.25)
                     elif kind == "command":
@@ -321,6 +359,9 @@ class ModerationAdapter(BasePlatformAdapter):
                                 pass  # Never replay a command after an uncertain response.
                     # Drain already-arrived edits/messages before handing a report to the network.
                     if self.queue.empty() and generation == self.generation:
+                        if self.classifier is not None:
+                            self.classifier.submit(sorted(self.classifier_candidates))
+                            self.classifier_candidates.clear()
                         await self.flush_reports()
                 finally:
                     self.queue.task_done()
@@ -351,6 +392,9 @@ class ModerationAdapter(BasePlatformAdapter):
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
         self.worker = self.receiver = self.client = None
+        if self.classifier is not None:
+            await self.classifier.close()
+            self.classifier = None
         if self.store is not None:
             self.store.close()
             self.store = self.live = None

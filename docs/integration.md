@@ -114,3 +114,7 @@ Keep inference and enforcement disabled while running the integration prototype 
 6. Public bot mentions, DMs, malformed events, plugin failure, startup gaps, and reconnects never creating privileged conversational access or duplicate processing.
 
 Offline unit tests and source inspection provide useful preparation but cannot satisfy these live integration checks. Phase 4 remains open until the installed runtime and approved Discord test prove them; later live phases must not depend on an assumed integration.
+
+## Optional JEV worker — September 20, 2026
+
+Version 0.3.0 implements default-off JEV shadow evaluation alongside the rules and report sender. The selected API integration bypasses the general agent loop and uses the owning profile's TypeSafe key. No JEV skill or MCP is installed in `liberdus-mod`. See [integration comparison, account/key setup and budgets](jev.md); build-plan section 10.7 records the selected scope. The existing zero-inference baseline remains the first live test before any shadow opt-in.

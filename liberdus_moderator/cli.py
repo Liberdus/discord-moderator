@@ -34,7 +34,7 @@ def _events(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
-    for name in ("validate", "replay", "simulate", "command", "incidents", "reports"):
+    for name in ("validate", "replay", "simulate", "command", "incidents", "reports", "classifications"):
         command = commands.add_parser(name)
         command.add_argument("--config", required=True)
         if name != "validate":
@@ -72,6 +72,15 @@ def main(argv=None):
                     _emit(store.incidents())
                 elif args.operation == "reports":
                     _emit(store.reports())
+                elif args.operation == "classifications":
+                    exists = store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classifier_attempts'").fetchone()
+                    records = [dict(row) for row in store.db.execute(
+                        "SELECT * FROM classifier_attempts ORDER BY started_at DESC LIMIT 100")] if exists else []
+                    for row in records:
+                        row["result"] = json.loads(row.pop("result_json") or "null")
+                    _emit({"mode": config.classifier.mode, "records": records,
+                           "attempts": store.get_setting("classifier_total_calls", 0),
+                           "reserved_microusd": store.get_setting("classifier_total_reserved_microusd", 0)})
         return 0
     except (OSError, ValueError, TypeError, sqlite3.Error) as error:
         print(f"Error: {error}", file=sys.stderr)

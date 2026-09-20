@@ -17,11 +17,11 @@ Configuration deliberately separates:
 - `storage`: database path, retention duration, and capacity bounds.
 - `rules`: known domains, repeat thresholds, notification cooldown, and scoped crosspost exceptions.
 
-`mode` accepts `report_only` or `off`. `ai_enabled` and `actions_enabled` must be `false`; unsupported capabilities are rejected. An unmatched message produces `no_match`, not a safety clearance. The matcher does not understand intent, satire, quoted scams, or policy context.
+`mode` accepts `report_only` or `off`. `actions_enabled` must be `false`. Schema 1 remains AI-disabled; schema 2 permits `ai_enabled = true` only with an explicitly budgeted `classifier.mode = "shadow"`. Unsupported classifier report annotations are rejected. See [JEV operations](jev.md). An unmatched message produces `no_match`, not a safety clearance. The matcher does not understand intent, satire, quoted scams, or policy context.
 
 Relative `storage.database_path` values resolve from the current working directory. Use `--database` to override the path explicitly. The live adapter requires the absolute moderation-profile state path and one connection owner. Do not point test commands at another service's database.
 
-The engine binds state to a hash of the full configuration, including storage settings and the configured database path. Starting `replay` or a local `command` with a changed configuration clears active message contributions, marks open incidents `policy_changed`, and cancels pending reports; retained incident history remains available. Changing `storage.database_path` inside a copied configuration therefore starts a fresh coverage window, even if other policy settings are unchanged. An explicit `--database` override selects a path without changing the configuration hash. `incidents` and `reports` inspect retained state without constructing the engine or activating a changed configuration. Use the original configuration and an explicit path override when verifying a restore.
+The engine binds state to a hash of the full configuration, including storage settings and the configured database path. Starting `replay` or a local `command` with a changed configuration clears active message contributions, marks open incidents `policy_changed`, and cancels pending reports; retained incident history remains available. Changing `storage.database_path` inside a copied configuration therefore starts a fresh coverage window, even if other policy settings are unchanged. An explicit `--database` override selects a path without changing the configuration hash. `incidents`, `reports`, and `classifications` inspect retained state without constructing the engine or activating a changed configuration. Use the original configuration and an explicit path override when verifying a restore.
 
 ## Fixtures and local commands
 
@@ -50,7 +50,7 @@ The fixtures are local test inputs, **not registered Discord slash commands**. I
 | --- | --- |
 | `status` | Show configured/paused state and record counts. |
 | `pause` | Persist a pause, clear the current message window, invalidate open incidents, and cancel pending report payloads while retaining incident history. |
-| `resume` | Resume within the configured mode with a fresh message window because edits may have been missed during the pause; does not enable enforcement or AI. |
+| `resume` | Resume within the configured mode with a fresh message window because edits may have been missed during the pause; does not change the enforcement or AI feature flags (already-configured shadow evaluation can resume). |
 | `incident` | Inspect the incident ID in `arguments`. |
 | `logs` | Use `arguments: ["on"]` or `["off"]` to persist optional log-payload generation; enabling requires a configured log channel, and disabling cancels pending log payloads. No Discord posting occurs. |
 | `explain` | Inspect the incident ID in `arguments` and return saved reasons/evidence without changing live counters. |

@@ -804,3 +804,43 @@ Use moderator-labeled synthetic/redacted fixtures first, including ordinary disc
 Acceptance tests must cover: off mode performs no provider I/O; both profile keys and results stay isolated; existing code reports continue during provider failures; request/usage limits cannot be exceeded by concurrent scheduling or hidden retries; edits invalidate cached/in-flight results; duplicate events do not repeat evaluations; JEV outputs cannot change commands, policy, scope, or tool permissions; and a shadow result never creates a Discord post.
 
 **Open discussion:** start with incident enrichment only, or include a bounded sample of other test-channel messages? Which semantic categories matter most to moderators? Provider access/data handling, live budget, and calibrated thresholds remain unset. No JEV account, key, purchase, SDK installation, inference request, or runtime flag was added during this research.
+
+
+### 10.7 Selected JEV integration — implemented default-off, September 20, 2026
+
+The operator selected the recommendation: evaluate **existing deterministic-rule incidents only**, and requested implementation before installing the pilot. Version 0.3.0 adds an optional direct JEV worker. Deployment and provider credentials remain owner-run steps; no live Discord connection, provider call, API charge, or Hermes profile mutation occurred during this implementation.
+
+**Plugin/MCP review was completed before code changes.** The official TypeSafe skill is API-development guidance, useful while building the repository. Community MCPs `itsmostafa/typesafe-mcp` and `y0usaf/typesafe-mcp` expose evaluation tools for conversational agents. Hermes supports profile-scoped MCP tools, but our dedicated moderation adapter never enters that loop. Installing either MCP in `liberdus-mod` would not wire it into incident processing. We selected a direct async HTTP client using Hermes's existing aiohttp library, with no new MCP, SDK, skill, or background process in the profile. Research and source links are documented in the repository's `docs/jev.md`.
+
+Implemented flow:
+
+```text
+Discord test messages
+         |
+Scope + deterministic rules
+         |
+   Existing incident
+      /       \
+     v         v
+bot-mod     JEV flag on?
+report          |
+          Bound + budget
+                |
+           TypeSafe API
+                |
+          Local shadow
+           result only
+```
+
+- Default is **off**: no TypeSafe client, key lookup, or API call. The installer uses schema 2 with an explicit disabled classifier table and zero budgets. Legacy schema 1 stays code-only and keeps its original policy hashes.
+- Supported opt-in is **shadow**: requires `ai_enabled = true`, `classifier.mode = "shadow"`, and positive finite limits. JEV classifies apparent message purpose as promotion, announcement, quoted warning, other, or unclear. It cannot establish whether a crosspost was authorized or change a rule's decision. Classifier `report_only` annotations from the earlier proposal remain future work and are rejected today.
+- One async worker, at most one provider attempt per incident across copies, revisions and restarts. Strict typed-response validation; model `jev-1.13.0` pinned; no automatic retries, redirects, general Hermes inference, or fallback tools.
+- Only bounded incident text and counts leave the VPS. Metadata identities and surrounding/private conversations are omitted; embedded Discord IDs are redacted. Free-form text can still identify people. An explicit shadow opt-in sends that text to TypeSafe.
+- Before and after a call, verify the incident revision, evidence hash, policy, scope, pause state, connection and expiry. Discard stale judgments after edits/deletes/gaps/config changes, retain valid usage, and leave deterministic private reports unchanged.
+- Local SQLite audit records include model/rubric/policy bindings, result probabilities and confidence, token usage, estimated cost, latency and fixed error outcomes. Unknown outcomes are retained and never automatically retried. Incident retention also removes associated results; lifetime budget counters remain.
+- Default shadow setup caps: $0.05/day and $0.25 total, plus 100/day and 1,000 total attempt ceilings. Every attempt reserves $0.002753 (65,536 input tokens to cover the documented 64k model context), including failures, with no refund. This permits at most 18 attempts/day and 90 total under those local accounting limits. Actual token charges may be lower; these local caps do not guarantee the provider invoice. A reported usage overrun latches evaluation off for review.
+- Input cap 12,000 UTF-8 request bytes / 32 evidence messages; queue 20; concurrency one; timeout three seconds; minimum interval six seconds. Limits can skip evaluation, so no complete AI coverage is claimed.
+
+**Next steps:** install the disabled pilot and verify the original live code-only test. Obtain a TypeSafe API key from its console, store it with the hidden-prompt helper in the `liberdus-mod` profile, and explicitly enable shadow mode after checking account billing/data handling. The helper performs a protected schema migration without restarting anything. Owner instructions are in `docs/jev.md`; staged artifacts are `/tmp/liberdus-install-pilot-20260920.pyz` and `/tmp/liberdus-jev-20260920.pyz`. Stock Discord stays disabled in both profiles.
+
+Offline automated tests cover default-off isolation, schema migration, response validation, budgets and restarts, failures, stale evidence, setup helpers and unaffected private-report delivery while JEV waits. They do not establish JEV moderation accuracy or complete live Discord acceptance. Evaluate labeled spam, legitimate announcements, quoted warnings, multilingual messages and adversarial text before considering report annotations. Broader scanning, feedback learning and enforcement remain separate future work.

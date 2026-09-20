@@ -1,4 +1,7 @@
 import importlib
+from dataclasses import replace
+from liberdus_moderator.config import Config
+from liberdus_moderator.configure_jev import policy_text
 import inspect
 from pathlib import Path
 import shutil
@@ -35,6 +38,7 @@ class InstallationTests(unittest.TestCase):
             policy.write_text((ROOT / "examples/config.toml").read_text()
                 .replace('operator_role_ids = ["301"]', 'operator_role_ids = []').replace('log_channel_id = "202"\n', '')
                 .replace('database_path = "state/moderation.sqlite3"', f'database_path = "{profile}/state/moderation.sqlite3"'))
+            policy.write_text(policy_text(replace(Config.from_file(policy), schema_version=2)))
             bundle = Path(directory) / "install.pyz"
             build(ROOT, policy, bundle)
             def run(command, **kwargs):
@@ -44,6 +48,10 @@ class InstallationTests(unittest.TestCase):
             with patch("liberdus_moderator.install_pilot.subprocess.run", side_effect=run):
                 result = install(bundle, home)
             self.assertTrue(result["installed"])
+            installed_policy = Config.from_file(profile / "moderation.toml")
+            self.assertEqual(installed_policy.schema_version, 2)
+            self.assertEqual(installed_policy.classifier.mode, "off")
+            self.assertFalse(installed_policy.ai_enabled)
             self.assertFalse(result["platform_enabled"])
             self.assertFalse(result["gateway_restarted"])
             updated = yaml.safe_load((profile / "config.yaml").read_text())

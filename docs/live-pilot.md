@@ -9,7 +9,8 @@ Build an installation zipapp from the repository and an operator-specific, valid
 ```bash
 python3 scripts/build_pilot_bundle.py \
   --config config.local.toml \
-  --output /tmp/liberdus-install-pilot-20260920.pyz
+  --output /tmp/liberdus-install-pilot-20260920.pyz \
+  --jev-output /tmp/liberdus-jev-20260920.pyz
 ```
 
 The `hermes` account owner runs:
@@ -61,7 +62,7 @@ bot-mod: !mod status
       Fixed private response
 ```
 
-Messages never enter Hermes's general conversation handler. Generic Hermes/cron outbound sending is refused. The adapter does not register tools, model calls, slash commands, reactions, threads, or public actions.
+Messages never enter Hermes's general conversation handler. Generic Hermes/cron outbound sending is refused. The adapter does not register tools, slash commands, reactions, threads, or public actions. Its separate optional JEV shadow worker makes direct provider calls only after explicit opt-in; see [JEV setup](jev.md).
 
 Supported private text commands are `!mod status`, `!mod pause`, `!mod resume`, `!mod incident ID`, and `!mod explain ID`. Commands require both the configured channel and operator ID. DMs, unauthorized private commands, own/bot/webhook messages, and out-of-scope channels receive no reply. Public bot mentions are ordinary evidence, not commands. Command responses are limited to one per second; duplicate command message IDs are retained in a bounded receipt table and never replayed while retained. `explain` returns saved incident metadata; it does not quote source text or call a model.
 
@@ -73,7 +74,7 @@ Supported private text commands are `!mod status`, `!mod pause`, `!mod resume`, 
 - Uncached edits are fetched serially, at most four per second, with an eight-second timeout. No-content-change embed updates are ignored. Changed content/attachments are reprocessed through the core's version checks. A relevant deletion conservatively resets the whole window, including queued evidence.
 - Reports are validated against the current policy, incident revision, expiry, and destination before an attempt is durably marked `sending`. Success stores the Discord message ID. A timeout, error, or process crash leaves an `uncertain` outcome that is **not automatically retried**. discord.py 2.7.1 sets `enforce_nonce` for the supplied stable nonce, reducing duplicates during SDK-level retries; this is not a claim of permanent exactly-once delivery.
 - Reports and command responses disable mentions, embeds, and notifications. Reports contain IDs and jump links, not copied source text. Already-posted reports are historical snapshots; subsequent edits/deletions do not automatically edit those Discord posts. Use the incident command to inspect current status.
-- A runtime or worker failure closes the moderation connection and records a fatal state. It cannot enable a conversational fallback. An unreviewed Hermes update or Discord-library version change blocks startup until compatibility is rechecked.
+- A runtime or Discord worker failure closes the moderation connection and records a fatal state. It cannot enable a conversational fallback. An unreviewed Hermes update or Discord-library version change blocks startup until compatibility is rechecked.
 
 ## Live acceptance checklist
 
@@ -98,6 +99,8 @@ Confirm its current-process status is disconnected before copying/restoring SQLi
 
 Plugin updates are manual and version-reviewed. Do not restore a saved configuration wholesale after unrelated configuration changes; use the protected backup to inspect/revert only the pilot changes. Telegram belongs to the default profile and should remain configured as before.
 
-## JEV discussion checkpoint — September 20, 2026
+## JEV implementation checkpoint — September 20, 2026
 
-The operator paused installation to discuss an optional JEV classifier. [Build plan section 10.6](BUILD_PLAN.md#106-optional-jev-classifier--discussion-proposal-september-20-2026) records the researched proposal and default-off/shadow/report-only design. The existing installer remains code-only and has no JEV client, key, or runtime flag. Resume deployment after the discussion resolves the intended scope.
+The selected existing-incident classifier is implemented in version 0.3.0, default off. The installer uses schema 2 with an explicit disabled classifier table and zero budgets; neither installation nor ordinary fixture replay calls a model. The original discussion is preserved in build-plan section 10.6 and the implementation checkpoint appended in section 10.7.
+
+Run the initial acceptance checklist above with JEV off. Then follow [JEV setup](jev.md) for TypeSafe account/key instructions, protected owner-run helpers, and optional shadow activation. Shadow results stay local and never alter the private rule reports. The default profile needs no JEV plugin, skill, MCP or model change.

@@ -86,7 +86,7 @@ class ConfigTests(unittest.TestCase):
             RuleSettings(blocked_domains=tuple(f"domain{i}.invalid" for i in range(1001)))
 
     def test_rejects_enforcement_ai_and_malformed_flags(self):
-        for key, value in (("ai_enabled", True), ("actions_enabled", True), ("mode", "enforce"), ("mode", []), ("logs_enabled", "false"), ("actions_enabled", 0), ("schema_version", True), ("schema_version", 2)):
+        for key, value in (("ai_enabled", True), ("actions_enabled", True), ("mode", "enforce"), ("mode", []), ("logs_enabled", "false"), ("actions_enabled", 0), ("schema_version", True), ("schema_version", 3)):
             data = config_data()
             data[key] = value
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):

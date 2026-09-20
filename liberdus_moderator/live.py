@@ -75,15 +75,16 @@ class LiveSession:
                     f"Messages: {status['message_count']} | Incidents: {status['incident_count']}\n"
                     f"Pending reports: {status['pending_reports']} | Uncertain: {status['uncertain_reports']}\n"
                     f"Coverage resets: {status['coverage_gaps']} | Last: {gap['reason']}\n"
-                    "AI calls: 0 | Enforcement: disabled")
+                    f"JEV: {status['classifier_mode']} / {status['classifier_state']}\n"
+                    f"AI attempts: {status['ai_attempts']} | Enforcement: disabled")
         if event.command in ("incident", "explain"):
             data = response["data"]
             # Saved evidence text never becomes outbound instructions, markdown, or mentions.
             return (f"Incident {data['id']} | revision {data['revision']}\n"
                     f"Rule: {data['rule_id']} | State: {data['status']}\n"
                     f"Author ID: {data['author_id']} | Evidence items: {len(data['evidence'])}\n"
-                    "Saved code-rule evidence; no AI or enforcement. Reports are snapshots and may be superseded.")
-        return "Moderation setting updated. AI and enforcement remain disabled."
+                    "Saved code-rule evidence; enforcement disabled. Reports are snapshots and may be superseded.")
+        return "Moderation setting updated. Enforcement remains disabled."
 
     def claim_report(self):
         """Validate current evidence and persist intent before handing a report to I/O."""
