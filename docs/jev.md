@@ -1,6 +1,6 @@
 # Optional JEV shadow evaluation
 
-**Current decision — September 20, 2026: small shadow trial authorized.** The operator now has a TypeSafe API key and explicitly chose to try JEV in the existing private test channels. This supersedes the earlier deferral. Activation and the first successful provider result remain pending: the last supplied Discord status shows `JEV: off / off` and zero AI attempts. The existing installed plugin already includes this integration; follow the owner-run setup below without reinstalling it. Keep enforcement disabled and use the $0.05/day and $0.25 total local accounting limits described below.
+**Current status — September 20, 2026: first live shadow evaluation passed.** The operator supplied connected shadow-mode status, a new three-channel rule report, and a matching local `outcome: ok` record with `choice: announcement`, confidence 0.98 and latency 275 ms. The API accepted the configured credentials for this request. Continue the small private-channel trial with the promotion example, then the quoted warning; setup and the first announcement test do not need repeating. Keep enforcement disabled and the prescribed $0.05/day and $0.25 total local accounting limits unchanged. See the [recorded result](#first-live-result) for evidence and its limits.
 
 Implemented in 0.3.0; **disabled in the installation bundle**. The chosen scope is existing code-rule incidents only. This does not scan every message, create new incidents, suppress rule reports, annotate Discord reports, invoke Hermes's model/tools, or perform moderation actions. `report_only` classifier annotations remain future work and are rejected by configuration today.
 
@@ -62,6 +62,8 @@ These are local conservative accounting limits, **not a guarantee of the provide
 
 ## Owner-run setup on db2
 
+**Already completed for this pilot.** The following setup commands remain a reference; continue with test B in the [shadow trial](#first-live-shadow-trial) rather than rerunning them after the successful first result.
+
 The developer account cannot access `/home/hermes`. Run these commands in the VPS terminal as **`hermes`**. The operator has already installed the pilot and received `!mod selftest` 9/9; **do not rerun the pilot installer or self-test updater** for this trial. The staged `/tmp/liberdus-jev-20260920.pyz` helper was checked against the current repository's setup, configuration and classifier source. It contains no credentials.
 
 Disable the custom platform and restart the shared gateway before changing setup:
@@ -108,6 +110,8 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 In `bot-mod`, send `!mod status` after the restart. Expect `report_only`, `Connected: True`, JEV mode `shadow`, and enforcement disabled. `ready` means the worker is ready locally; it does not prove the key works. Zero AI attempts is normal before the first new qualifying incident. If moderation is paused, use the already-authorized `!mod resume` in `bot-mod` before testing.
 
 ### First live shadow trial
+
+**Progress:** the announcement case (test A) returned `ok` and `announcement`; [details below](#first-live-result). The next case is test B, the promotional example after the numbered instructions. The quoted-warning case follows it. Leave the connected profile and current trial limits as configured.
 
 Use your normal authorized **human account**. The bot ignores its own messages and other bots/webhooks. `!mod selftest` remains synthetic and makes no provider calls, so it cannot test JEV authentication.
 
@@ -173,6 +177,26 @@ python3 scripts/build_pilot_bundle.py \
 ```
 
 Use only the rebuilt JEV helper for an existing installation. For a genuinely new installation, follow [live-pilot.md](live-pilot.md) and establish the code-only baseline before enabling shadow mode.
+
+## First live result
+
+**Operator evidence — September 20, 2026.** The supplied Discord report and local result share incident `9a7c69df8eb7447188e7ebfd09d2209b`, revision 1. The report identifies `cross_channel_repeat`, author `977263877391794217`, three copies in the approved test channels, and report-only with no public action.
+
+| Field | Observed value |
+| --- | --- |
+| Provider outcome / model | `ok` / `jev-1.13.0` |
+| Purpose | `announcement` |
+| Model confidence | 0.98; a model score, not measured accuracy |
+| Probabilities | announcement 0.98; quoted warning 0.02; other, promotion and unclear 0.0 |
+| Recorded latency | 275 ms for this request |
+| Usage | 543 input tokens; 54 output tokens |
+| Local estimated cost | 23 microusd = $0.000023; not an authenticated invoice |
+| Lifetime accounting | 1 attempt; 2,753 microusd = $0.002753 reserved against local caps |
+| Worker state in results | `ok` |
+
+This confirms that this request was authenticated, returned a response accepted by the strict client, and was saved with the matching incident. It also shows that the ordinary private rule report still arrived. The earlier status showed `JEV: shadow / ready` and zero attempts; the later result records the completed first attempt. `Coverage: code only` is the fixed detection-coverage label: rules find incidents and the separate JEV worker classifies selected incidents afterward. A new status request should include the recorded attempt.
+
+The reserved amount is conservative local budget accounting, separate from the smaller token-based estimate. Neither value verifies the provider invoice. A single successful example establishes connectivity and the observed label only; it does not establish calibrated confidence, general accuracy, latency guarantees or review of every message. The developer recorded owner-supplied evidence without reading the profile/key or making another provider call. Continue with test B, then test C, one case at a time; no code, policy, scope or budget change is needed.
 
 ## Validation and limits
 
