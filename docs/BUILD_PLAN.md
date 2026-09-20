@@ -883,3 +883,12 @@ The operator supplied this live sequence from `bot-mod`:
 No report appears between the two commands in the supplied excerpt. The test-channel posts made during the paused interval were not included, so suppression of a deliberately posted paused pattern is not separately confirmed by this excerpt. Keep that distinction in the acceptance record; it does not block proceeding with the other independent tests.
 
 **Next test:** post `Liberdus single-channel spam test.` four times in `bot-test-1` within 30 seconds, using the same account and plain text. Expect one new private report with `Rule: same_channel_repeat` and four observed copies. JEV remains deferred/off. Remaining cases include edits/deletes, authorization boundaries, and restart recovery. This update records operator evidence only; no profile changes, restart, Discord posts or provider calls were made.
+
+
+### 10.10 Single-channel repetition passed — September 20, 2026
+
+The operator supplied a private report for incident `9b8820010d384c94ac575a2c97a31ce1`, revision 1, with `Rule: same_channel_repeat`, author `977263877391794217`, four observed copies and four evidence links in `bot-test-1`. This matches the instructed four-copy, single-channel test and confirms its detection/private-report path from operator evidence. The report states report-only with no public action. JEV remains deferred/off; no configuration or runtime change was made while recording this result.
+
+**Next test: edited evidence.** Use a fresh three-channel incident to have the 120-second cross-channel window available. Post `Liberdus message editing test.` once in each of `bot-test-1`, `bot-test-2` and `bot-test-3`. After the new private report arrives, promptly edit the copy in `bot-test-3` to `This message has been corrected.`. Complete the edit within 120 seconds of the first test post, then allow a few seconds for processing. In `bot-mod`, run `!mod incident NEW_ID`, replacing `NEW_ID` with this new report's incident ID. Expect `State: withdrawn` because only two channels still contain matching text. If the incident expired before the edit, `expired` does not prove edit handling; repeat with a fresh phrase. Already-posted reports remain historical snapshots and are not edited or deleted by this plugin.
+
+The live edit test remains pending. Deletion handling, command authorization, restart recovery and explicit paused-pattern suppression confirmation also remain pending. These test instructions do not expand the approved channel scope or enable AI/enforcement.

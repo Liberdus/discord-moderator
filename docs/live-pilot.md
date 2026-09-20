@@ -122,7 +122,7 @@ Keep JEV off, AI/enforcement disabled, and the approved scope unchanged. Use the
 | Check | Action in approved test scope | Expected result |
 | --- | --- | --- |
 | Pause/resume | State changes and a new report after resume are operator-confirmed; see the checkpoint below. | Paused-pattern suppression still needs explicit confirmation that the paused test messages were posted without a report. |
-| Same-channel repetition | Post `Liberdus single-channel spam test.` four times in `bot-test-1` within 30 seconds. | One `same_channel_repeat` incident and a private report. |
+| Same-channel repetition — passed | Operator supplied incident `9b8820010d384c94ac575a2c97a31ce1`, revision 1. | `same_channel_repeat`, four copies and four evidence links in `bot-test-1`, reported privately. |
 | Edited evidence | Create a fresh three-channel incident, then edit one copy to different text before the 120-second window closes. Run `!mod incident NEW_ID` in `bot-mod`. | The current incident is withdrawn when fewer than three matching channels remain, or expired if the time window elapsed. The original report remains unchanged. |
 | Deleted evidence | Delete one of your disposable test messages, then inspect `!mod status`. | A coverage reset with `deleted_message`; current detection evidence is cleared. Already-delivered reports remain historical. |
 | Command authorization | Try your own `!mod pause` in `bot-test-1`; have a non-operator who already has access try it in `bot-mod`. Check status from your authorized account. | No state change or privileged command response for either attempt. Do not grant extra access just for this test. |
@@ -146,3 +146,16 @@ The supplied `bot-mod` transcript shows `!mod pause` returning `paused`, followe
 This confirms command state transitions and detection/reporting after resume. Keeping the old incident while clearing working messages is expected. The unchanged coverage-gap count of 2 is also expected: manual pause/resume does not increment that transport counter. JEV remains off with zero AI attempts and disabled enforcement in both responses.
 
 The supplied excerpt contains no report between pause and resume, but does not include the paused test-channel posts. Confirming that those messages were actually posted with no resulting report would complete the suppression portion of this test. Other checks can proceed independently. Next: send `Liberdus single-channel spam test.` four times in `bot-test-1` within 30 seconds; expect one private `same_channel_repeat` report with four copies.
+
+## Single-channel result recorded — September 20, 2026
+
+The operator supplied incident `9b8820010d384c94ac575a2c97a31ce1`, revision 1, `same_channel_repeat`, author `977263877391794217`, four copies and four links in `bot-test-1`. This is the expected private report for the single-channel test. Mark this detection/reporting case passed from operator evidence. JEV remains deferred/off and enforcement disabled.
+
+Next, test edits using a fresh incident:
+
+1. Post `Liberdus message editing test.` once in each of the three approved test channels, promptly enough to leave time for an edit within 120 seconds of the first post.
+2. Wait for the new private report, then edit the `bot-test-3` copy to `This message has been corrected.` while that window is still active.
+3. Allow a few seconds for processing. In `bot-mod`, run `!mod incident NEW_ID` with the ID from this new report, not the earlier single-channel report.
+4. Expect `State: withdrawn`. The original report stays visible as a historical snapshot. If the result is `expired`, the window elapsed; use a fresh phrase and retry to verify edit handling.
+
+No live edit outcome has been supplied yet. Record it before treating that case as passed.
