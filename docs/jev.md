@@ -1,6 +1,6 @@
 # Optional JEV shadow evaluation
 
-**Current status — September 20, 2026: announcement and promotion comparisons passed.** The two operator-supplied local records both have `outcome: ok` with their expected labels: `announcement` (confidence 0.98, 275 ms) and `promotion` (confidence 0.99, 318 ms). Accounting records two attempts. Continue with the quoted-warning example; setup and the completed examples do not need repeating. Keep enforcement disabled and the prescribed $0.05/day and $0.25 total local accounting limits unchanged. See the [first result](#first-live-result) and [promotion result](#promotion-result) for evidence and limits.
+**Current status — September 20, 2026: initial three-case trial complete.** All three operator-supplied local records have `outcome: ok` and their intended labels: announcement, promotion and quoted warning. Accounting records three attempts; the latest result took 375 ms. This verifies these examples and the live integration, not general accuracy or calibrated confidence. The supplied mode remains `shadow`; documentation updates did not change the live profile. Completed setup/tests need no repetition. Keep the prescribed trial limits and disabled enforcement unchanged. See the [completed trial and proposed next work](#initial-trial-complete).
 
 Implemented in 0.3.0; **disabled in the installation bundle**. The chosen scope is existing code-rule incidents only. This does not scan every message, create new incidents, suppress rule reports, annotate Discord reports, invoke Hermes's model/tools, or perform moderation actions. `report_only` classifier annotations remain future work and are rejected by configuration today.
 
@@ -62,7 +62,7 @@ These are local conservative accounting limits, **not a guarantee of the provide
 
 ## Owner-run setup on db2
 
-**Already completed for this pilot.** The following setup commands remain a reference; continue with test C in the [shadow trial](#first-live-shadow-trial) rather than rerunning them after the successful announcement and promotion results.
+**Already completed for this pilot.** The following setup commands remain a reference. All three initial comparisons have finished; use the [current checkpoint](#initial-trial-complete) for next steps without repeating setup.
 
 The developer account cannot access `/home/hermes`. Run these commands in the VPS terminal as **`hermes`**. The operator has already installed the pilot and received `!mod selftest` 9/9; **do not rerun the pilot installer or self-test updater** for this trial. The staged `/tmp/liberdus-jev-20260920.pyz` helper was checked against the current repository's setup, configuration and classifier source. It contains no credentials.
 
@@ -111,7 +111,7 @@ In `bot-mod`, send `!mod status` after the restart. Expect `report_only`, `Conne
 
 ### First live shadow trial
 
-**Progress:** test A returned `ok` and `announcement`; test B returned `ok` and `promotion`. The next case is test C, the quoted-warning example after the numbered instructions. Leave the connected profile and current trial limits as configured. The instructions below retain the complete sequence for reference; the completed cases do not need repeating.
+**Completed:** tests A, B and C returned `ok` with `announcement`, `promotion` and `quoted_warning` respectively. The instructions below preserve the original sequence for reference; no additional repetition is required. See the [current checkpoint](#initial-trial-complete) for results, limits and proposed follow-on work.
 
 Use your normal authorized **human account**. The bot ignores its own messages and other bots/webhooks. `!mod selftest` remains synthetic and makes no provider calls, so it cannot test JEV authentication.
 
@@ -180,6 +180,8 @@ Use only the rebuilt JEV helper for an existing installation. For a genuinely ne
 
 ## First live result
 
+The dated result sections preserve the sequence of the trial, including the next-test instructions given at each stage. Use the [latest checkpoint](#initial-trial-complete) for current next steps.
+
 **Operator evidence — September 20, 2026.** The supplied Discord report and local result share incident `9a7c69df8eb7447188e7ebfd09d2209b`, revision 1. The report identifies `cross_channel_repeat`, author `977263877391794217`, three copies in the approved test channels, and report-only with no public action.
 
 | Field | Observed value |
@@ -205,6 +207,26 @@ The reserved amount is conservative local budget accounting, separate from the s
 The earlier announcement record remains present. Lifetime accounting now records two attempts, worker state `ok`, and 5,506 microusd ($0.005506) reserved against local caps. Each result's token-based cost estimate is 23 microusd; their sum is 46 microusd ($0.000046). These estimates and conservative reservations do not verify provider billing. Two matching examples are an initial comparison, not an accuracy benchmark.
 
 **Next:** post `JEV test C: Warning: messages saying "claim your free reward" may be scams. Do not follow their instructions.` identically once in each of the three approved test channels within 120 seconds, from the human operator account. Wait for the ordinary private report and JEV processing, leave the copies unchanged, then run `python3 /tmp/liberdus-jev-20260920.pyz results`. Match the new incident and compare its actual label with `quoted_warning`. This example tests whether quoted promotional language is recognized in a warning context. Its result is still pending; no policy, budget, scope or runtime change was made while recording the promotion evidence.
+
+## Initial trial complete
+
+**Quoted-warning result — September 20, 2026.** The operator supplied incident `b48ee236ff774e0f8efec35caa8ba447`, revision 1, with `outcome: ok`, model `jev-1.13.0`, `choice: quoted_warning`, confidence 1.0 and recorded latency 375 ms. Usage is 541 input tokens and 55 output tokens; the local estimated cost is 23 microusd. The probability map gives quoted warning 1.0 and all other choices 0.0. These are returned model scores, not proof of certainty. The policy and rubric hashes match the preceding two cases. This excerpt contains local results, not a separate Discord report transcript for the third case.
+
+| Intended comparison | Returned choice | Model confidence | Recorded latency |
+| --- | --- | --- | --- |
+| Announcement | `announcement` | 0.98 | 275 ms |
+| Promotion | `promotion` | 0.99 | 318 ms |
+| Quoted warning | `quoted_warning` | 1.0 | 375 ms |
+
+All three records have `outcome: ok`. Lifetime accounting records three attempts, worker state `ok`, and 8,259 microusd ($0.008259) conservatively reserved against the local caps. The three individual token-based estimates sum to 69 microusd ($0.000069), distinct from reservations and from an authenticated provider invoice.
+
+**Conclusion:** the initial three examples are complete and matched their intended labels, including promotional wording used inside a warning. This verifies initial provider connectivity, typed-response validation and local persistence on these live incidents. Three deliberately written examples do not establish a general accuracy rate, confidence calibration, production readiness, guaranteed latency or detection of messages the rules never select. Do not repeat these completed examples just to advance the project.
+
+**Current runtime:** the operator's result still reports `mode: shadow`; this checkpoint did not turn it off or change the live profile. While shadow remains enabled, future eligible incidents in the approved test scope may produce provider calls under the existing limits. The [stop procedure](#stop-the-trial) restores code-only monitoring when desired. Classifications currently remain local, fixed Discord reports still come from code rules, and enforcement remains disabled.
+
+**Proposed next improvement, not implemented:** add an on-demand saved JEV result to the authorized private `!mod incident <id>` lookup, so the operator can review it in `bot-mod` without repeatedly opening SSH. Preserve existing command authorization. Display only stored typed data and its incident revision, age and current/historical state; make no new provider call from the lookup and do not change report selection, suppression or enforcement. This is a recommendation for a separate code change, not a feature enabled by this trial.
+
+Before allowing JEV to influence reports or actions, review a broader set of manually labeled examples and disagreements, including ordinary discussion, mixed/unclear intent, multilingual messages and adversarial instructions. Wider message scanning, production-channel access and enforcement remain separate decisions. The developer recorded the supplied results without accessing credentials, sending Discord messages, calling TypeSafe or restarting the gateway.
 
 ## Validation and limits
 
