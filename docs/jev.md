@@ -230,7 +230,7 @@ Before allowing JEV to influence reports or actions, review a broader set of man
 
 ## Automated batch evaluation
 
-The selected next step is implemented as a [standalone JEV batch runner](jev-batch.md). One command evaluates ten synthetic incident examples with the existing profile key and prints a summary. It shares the live worker's daily/total call and spending caps; batch attempts therefore appear in the AI-attempt total, while their results are kept outside moderation incidents. Saved attempts are reused on repeated runs. No browser, extra Discord bot, plugin replacement or restart is needed. The owner-run real batch remains pending; development checks used mocked provider responses.
+The selected next step is implemented as a [standalone JEV batch runner](jev-batch.md). One command evaluates ten synthetic incident examples with the existing profile key and prints a summary. It shares the live worker's daily/total call and spending caps; batch attempts therefore appear in the AI-attempt total, while their results are kept outside moderation incidents. Saved attempts are reused on repeated runs. No browser, extra Discord bot, plugin replacement or restart is needed. The owner completed the baseline with ten valid responses and nine expected-label matches. The mixed-purpose case returned promotion at displayed score 0.61 instead of unclear; it remains a review case. Recorded latency averaged 317.4 ms, the known token estimate was $0.000232, the reservation was $0.027530, and shared accounting reports 13 attempts. See the [baseline review](jev-batch.md#baseline-results--september-20-2026). Development checks used mocked responses; the real-provider evidence is the owner's pasted summary.
 
 ## Validation and limits
 

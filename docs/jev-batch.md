@@ -1,6 +1,6 @@
 # JEV batch evaluation
 
-The standalone **context-v1** runner evaluates ten synthetic examples with the real JEV API and prints one narrow summary. It is ready for the owner to run; no live batch results have been supplied yet.
+The standalone **context-v1** runner evaluates ten synthetic examples with the real JEV API and prints one narrow summary. The owner has completed the baseline: ten valid responses, nine matches and one mixed-purpose review case. The [recorded results](#baseline-results--september-20-2026) below supersede the earlier pending-run status. No repeat run is needed.
 
 It reuses the plugin's incident request builder, pinned model, rubric, transport and typed-response validator. Each example becomes a disposable three-channel repeat incident in memory. Expected labels and test names never enter the provider request. No real Discord messages are read, sent or changed.
 
@@ -8,7 +8,7 @@ It reuses the plugin's incident request builder, pinned model, rubric, transport
 
 The existing liberdus-mod JEV shadow setup and stored TypeSafe key are sufficient. The installed moderator can keep running. No plugin installation, browser session, additional bot, gateway restart or new key is needed.
 
-Run the full batch:
+The completed baseline used this command, retained for reference and resuming incomplete runs:
 
 ```bash
 python3 /tmp/liberdus-jev-batch-20260920.pyz run
@@ -83,7 +83,7 @@ The key is read only from the owned, private liberdus-mod/.env file, without env
 
 This is live JEV classification of synthetic incident inputs. It does not verify Discord message delivery, permissions, edits/deletions, reconnects, human-account authorization or general classification accuracy. The existing self-test and previously recorded live Discord tests cover other layers. A dedicated Discord test bot remains separate future work; all current bot exclusions are unchanged.
 
-The developer account cannot access the real hermes profile. Development used synthetic profiles, mock provider replies and blocked external network edges. Real batch performance and disagreements remain pending the owner's run.
+The developer account cannot access the real hermes profile. Development used synthetic profiles, mock provider replies and blocked external network edges. The owner subsequently supplied the completed baseline below. This confirms real-provider execution for these examples; other live Discord and general accuracy claims remain outside this batch.
 
 ## Build and validation
 
@@ -97,3 +97,30 @@ python3 scripts/build_jev_batch.py \
 This packages source only; no profile, policy, token or database is included. The helper is independent of the installed 0.3.3 plugin, so deploying it does not require replacing or restarting the plugin.
 
 The 148 core/setup tests pass on Python 3.11.16 and 3.12.3; 35 integration tests pass with the pinned Hermes runtime and mocked/blocked external network edges. Batch-specific coverage includes shared budget exclusion in both directions, matching/disagreement results, cached runs, readonly results, interruption/crash/timeout accounting, daily rollover, profile/policy boundaries, key isolation and packaged preview behavior.
+
+## Baseline results — September 20, 2026
+
+The owner supplied the terminal summary from `run`, suite context-v1, run name baseline. All ten cases returned `ok`; nine matched the initial expected labels. The scores below are the displayed, rounded model scores from that summary.
+
+| Example | Expected | Actual | Displayed score | Recorded latency |
+| --- | --- | --- | --- | --- |
+| Community event | announcement | announcement | 1.00 | 472 ms |
+| Referral offer | promotion | promotion | 1.00 | 309 ms |
+| Quoted scam warning | quoted_warning | quoted_warning | 0.99 | 275 ms |
+| Support question | other | other | 1.00 | 300 ms |
+| Mixed purpose | unclear | promotion | 0.61 | 286 ms |
+| Adversarial instructions | unclear | unclear | 0.46 | 340 ms |
+| Spanish update | announcement | announcement | 1.00 | 299 ms |
+| Vietnamese warning | quoted_warning | quoted_warning | 1.00 | 280 ms |
+| Ordinary conversation | other | other | 1.00 | 288 ms |
+| Spanish promotion | promotion | promotion | 1.00 | 325 ms |
+
+Mean recorded latency is 317.4 ms, median 299.5 ms, range 275–472 ms. The summary reports ten new attempts, $0.027530 reserved and a known token-based estimate of $0.000232. The shared total is 13 calls, consistent with the three earlier incident evaluations plus ten batch attempts. No authenticated provider invoice or separate timing trace was supplied.
+
+**Review case:** the input combines a community maintenance notice with an explicit request to buy an unrelated subscription using a referral code. The current rubric describes promotion as promoting an offer and unclear as including mixed purpose, so both criteria apply. Promotion at displayed confidence 0.61 is a plausible reading, but it disagrees with the initial expected label. Preserve this as REVIEW and keep the baseline at 9/10; neither the expectation nor the rubric has been changed.
+
+**Recommended next decision, not implemented:** clarify precedence for mixed content. An explicit endorsed sales pitch could take the promotion label even when packaged with an announcement; quoted or negated sales language in warnings should remain quoted_warning. Genuinely ambiguous intent can remain unclear. If this distinction is selected, make a versioned rubric change and compare a small set of mixed-purpose, legitimate announcement and quoted-warning cases. Do not relabel the baseline merely to make every case match, and do not use the displayed confidence as a calibrated decision threshold.
+
+The adversarial example returned unclear rather than the announcement requested inside the text; the multilingual examples also matched in this run. Those observations do not establish general prompt-injection resistance, language coverage or a 90 percent production accuracy rate. Keep JEV advisory in shadow mode and enforcement disabled. Automatic report annotations and Discord test-bot automation remain future changes.
+
+This is operator-supplied live-provider evidence. The developer updated documentation only; no key/profile access, provider call, Discord message or gateway restart accompanied this checkpoint.
