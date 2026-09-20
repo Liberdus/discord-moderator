@@ -1,6 +1,6 @@
 # Operations: offline implementation
 
-Status: September 20, 2026. This guide describes the offline CLI and core. The owner has verified the live report path, edit/deletion handling, command transitions, wrong-channel rejection, ignored DMs, and restart recovery, and received 9/9 from the installed synthetic self-test. The unauthorized-member live check is explicitly deferred; other unconfirmed cases remain recorded in [live-pilot.md](live-pilot.md). The operator supplied three successful [JEV shadow comparisons](jev.md#initial-trial-complete): announcement, promotion and quoted warning all matched. Local accounting records three attempts and the supplied mode remains shadow. The initial trial is complete; broader accuracy and production readiness remain unverified. Enforcement stays disabled. The historical build plan is not an installation record.
+Status: September 20, 2026. This guide describes the offline CLI and core. The owner has verified the live report path, edit/deletion handling, command transitions, wrong-channel rejection, ignored DMs, and restart recovery, and received 9/9 from the installed synthetic self-test. The unauthorized-member live check is explicitly deferred; other unconfirmed cases remain recorded in [live-pilot.md](live-pilot.md). The operator supplied three successful [JEV shadow comparisons](jev.md#initial-trial-complete): announcement, promotion and quoted warning all matched. Local accounting records three attempts and the supplied mode remains shadow. The initial trial is complete; broader accuracy and production readiness remain unverified. Version 0.3.2 adds authorized private inspection of stored JEV results; [deployment and live verification](incident-review.md) remain pending. Enforcement stays disabled. The historical build plan is not an installation record.
 
 ## Environment and configuration
 
@@ -51,9 +51,9 @@ The fixtures are local test inputs, **not registered Discord slash commands**. I
 | `status` | Show configured/paused state and record counts. |
 | `pause` | Persist a pause, clear the current message window, invalidate open incidents, and cancel pending report payloads while retaining incident history. |
 | `resume` | Resume within the configured mode with a fresh message window because edits may have been missed during the pause; does not change the enforcement or AI feature flags (already-configured shadow evaluation can resume). |
-| `incident` | Inspect the incident ID in `arguments`. |
+| `incident` | Inspect the incident ID in `arguments`, including a saved JEV result and its current/historical evidence status in 0.3.2. No new AI call. |
 | `logs` | Use `arguments: ["on"]` or `["off"]` to persist optional log-payload generation; enabling requires a configured log channel, and disabling cancels pending log payloads. No Discord posting occurs. |
-| `explain` | Inspect the incident ID in `arguments` and return saved reasons/evidence without changing live counters. |
+| `explain` | Return saved reasons/evidence and the same stored JEV view as `incident`, without changing classifier counters or requesting another evaluation. |
 | `selftest` | Run nine fixed synthetic checks in separate in-memory stores; no arguments, live evidence changes, provider calls, or public actions. See [coverage and deployment](selftest.md). |
 | `approve` | Unsupported; no enforcement path exists. |
 

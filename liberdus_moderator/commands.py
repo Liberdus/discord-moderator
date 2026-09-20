@@ -82,9 +82,10 @@ def handle_command(engine: Engine, request: CommandRequest):
         incident = store.incident(arguments[0])
         if incident is None:
             return {**result, "ok": False, "error": "incident_not_found"}
-        result["data"] = incident
+        from .classification_view import saved_classification
+        result["data"] = {**incident, "classification": saved_classification(engine, incident)}
         if name == "explain":
-            result["note"] = "Saved rule evidence only; no actions, policy changes, or AI calls."
+            result["note"] = "Saved rule evidence and stored JEV results; no actions, policy changes, or new AI calls."
     elif name == "selftest" and not arguments:
         from .selftest import run_selftest
         result["data"] = run_selftest()

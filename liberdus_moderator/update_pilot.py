@@ -1,4 +1,4 @@
-"""Owner-run 0.3.0 -> 0.3.1 code update for a disabled, stopped pilot.
+"""Owner-run 0.3.0/0.3.1 -> 0.3.2 code update for a disabled, stopped pilot.
 
 Keep configuration, policy, credentials and moderation state in place. Retain
 the previous plugin directory for rollback. Never restart the gateway here.
@@ -23,7 +23,8 @@ CHECK = SMOKE + r'''
 sys.path.insert(0, sys.argv[2])
 from liberdus_moderator import __version__
 from liberdus_moderator.selftest import run_selftest
-if __version__ != "0.3.1" or not run_selftest()["passed"]:
+from liberdus_moderator.classification_view import saved_classification, format_classification
+if __version__ != "0.3.2" or not run_selftest()["passed"]:
     raise RuntimeError("Updated self-test check failed")
 print("LIBERDUS_UPDATE_SELFTEST_OK")
 '''
@@ -69,12 +70,12 @@ def update(archive_path, home):
     if configuration.get("platforms", {}).get("liberdus_moderator", {}).get("enabled") is not False:
         raise ValueError("Disable liberdus_moderator and restart the gateway before updating")
     policy = Config.from_file(profile / "moderation.toml")
-    if (policy.ai_enabled or policy.actions_enabled or policy.classifier.mode != "off"
+    if (policy.actions_enabled or policy.classifier.mode not in {"off", "shadow"}
             or policy.mode != "report_only" or Path(policy.storage.database_path) != profile / "state/moderation.sqlite3"):
-        raise ValueError("Expected the existing code-only, profile-local pilot policy")
+        raise ValueError("Expected the existing report-only, profile-local pilot policy")
     manifest = yaml.safe_load((target / "plugin.yaml").read_text())
-    if not isinstance(manifest, dict) or manifest.get("name") != "liberdus-moderator" or manifest.get("version") != "0.3.0":
-        raise ValueError("This updater requires an existing version 0.3.0 installation")
+    if not isinstance(manifest, dict) or manifest.get("name") != "liberdus-moderator" or manifest.get("version") not in {"0.3.0", "0.3.1"}:
+        raise ValueError("This updater requires an existing version 0.3.0 or 0.3.1 installation")
     # Back up the actual installed tree, but never follow links out of it.
     if any(path.is_symlink() for path in target.rglob("*")):
         raise ValueError("Plugin tree must not contain symlinks")
@@ -90,8 +91,8 @@ def update(archive_path, home):
             _stage(archive_path, stage)
             staged_manifest = yaml.safe_load((stage / "plugin.yaml").read_text())
             if (not isinstance(staged_manifest, dict) or staged_manifest.get("name") != "liberdus-moderator"
-                    or staged_manifest.get("version") != "0.3.1"):
-                raise ValueError("Expected the reviewed version 0.3.1 update")
+                    or staged_manifest.get("version") != "0.3.2"):
+                raise ValueError("Expected the reviewed version 0.3.2 update")
             with tempfile.TemporaryDirectory(prefix="liberdus-update-check-") as scratch:
                 probe = subprocess.run(
                     [sys.executable, "-I", "-B", "-c", CHECK, str(home / "hermes-agent"), str(stage)],
@@ -112,11 +113,12 @@ def update(archive_path, home):
                 raise
     finally:
         os.close(lock)
-    return {"updated": True, "version": "0.3.1", "platform_enabled": False,
+    return {"updated": True, "version": "0.3.2", "platform_enabled": False,
             "plugin_directory": str(target), "plugin_backup": str(previous),
             "installed_runtime_import": "passed", "isolated_selftest": "9/9 passed",
             "configuration_changed": False, "policy_changed": False, "database_changed": False,
-            "gateway_restarted": False, "token_read": False, "discord_connected": False}
+            "gateway_restarted": False, "token_read": False, "discord_connected": False,
+            "classifier_mode": policy.classifier.mode, "provider_called": False}
 
 
 def main():

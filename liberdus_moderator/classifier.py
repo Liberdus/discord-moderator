@@ -44,10 +44,10 @@ def encoded(value):
 RUBRIC_HASH = hashlib.sha256(encoded(RUBRIC)).hexdigest()
 
 
-def validate_response(value):
+def validate_response(value, *, expected_model=MODEL):
     """Only retain the documented typed fields; never save arbitrary provider text."""
     try:
-        if value["model"] != MODEL:
+        if value["model"] != expected_model:
             raise ValueError
         answer = value["answers"]["context"]
         probabilities = answer["probabilities"]
@@ -65,7 +65,7 @@ def validate_response(value):
         for key in ("input_tokens", "output_tokens"):
             if type(usage[key]) is not int or not 0 <= usage[key] <= 1000000:
                 raise ValueError
-        return {"model": MODEL, "choice": answer["choice"],
+        return {"model": expected_model, "choice": answer["choice"],
                 "probabilities": probabilities, "confidence": answer["confidence"],
                 "input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}
     except (KeyError, TypeError, ValueError, AttributeError):

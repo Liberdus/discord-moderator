@@ -11,7 +11,8 @@ import zipfile
 import yaml
 from gateway.config import PlatformConfig
 
-from liberdus_moderator.config import Config, StorageSettings
+from dataclasses import replace
+from liberdus_moderator.config import Config, StorageSettings, ClassifierSettings
 from liberdus_moderator.configure_jev import policy_text
 from liberdus_moderator.update_pilot import update
 from scripts.build_pilot_bundle import build
@@ -33,7 +34,7 @@ class UpdateTests(unittest.TestCase):
         shutil.copytree(ROOT / "liberdus_moderator", self.target / "liberdus_moderator",
                         ignore=shutil.ignore_patterns("__pycache__"))
         self.manifest = self.target / "plugin.yaml"
-        self.manifest.write_text(self.manifest.read_text().replace("0.3.1", "0.3.0"))
+        self.manifest.write_text(self.manifest.read_text().replace("0.3.2", "0.3.1"))
         (self.target / "previous-version-marker").write_text("keep in backup")
         (self.home / "hermes-agent").symlink_to(SOURCE)
         self.config = self.profile / "config.yaml"
@@ -67,11 +68,31 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(result["isolated_selftest"], "9/9 passed")
         self.assertFalse(result["platform_enabled"])
         self.assertFalse(result["gateway_restarted"])
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.2")
         self.assertEqual((Path(result["plugin_backup"]) / "previous-version-marker").read_text(), "keep in backup")
         self.assertEqual(self.preserved(), before)
         with self.assertRaisesRegex(ValueError, "requires an existing version"):
             update(self.bundle, self.home)
+
+    def test_shadow_update_preserves_key_policy_database_and_budgets(self):
+        policy = Config.from_file(self.policy)
+        policy = replace(policy, ai_enabled=True, classifier=ClassifierSettings(mode="shadow",
+            max_daily_calls=100, max_total_calls=1000, daily_budget_microusd=50000, total_budget_microusd=250000))
+        self.policy.write_text(policy_text(policy))
+        (self.profile / ".env").write_text("DISCORD_BOT_TOKEN=synthetic-bot\nTYPESAFE_API_KEY=synthetic-jev\n")
+        before = self.preserved()
+        result = update(self.bundle, self.home)
+        self.assertEqual(self.preserved(), before)
+        self.assertEqual(result["classifier_mode"], "shadow")
+        self.assertFalse(result["provider_called"])
+        self.assertFalse(result["database_changed"])
+        self.assertFalse(result["policy_changed"])
+        self.assertFalse(result["token_read"])
+        self.assertEqual(result["version"], "0.3.2")
+
+    def test_original_030_pilot_can_also_upgrade(self):
+        self.manifest.write_text(self.manifest.read_text().replace("0.3.1", "0.3.0"))
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.3.2")
 
     def test_enabled_or_still_running_pilot_is_refused(self):
         original = self.config.read_text()
@@ -86,7 +107,7 @@ class UpdateTests(unittest.TestCase):
                 update(self.bundle, self.home)
         finally:
             os.close(lock)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.0")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
         self.assertFalse(list(self.profile.glob(".liberdus-update-backup-*")))
 
     def test_bad_archive_cannot_escape_stage_or_replace_existing_code(self):
@@ -94,7 +115,7 @@ class UpdateTests(unittest.TestCase):
             archive.writestr("plugin/../../escape", "bad")
         with self.assertRaisesRegex(ValueError, "Unexpected plugin archive member"):
             update(self.bundle, self.home)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.0")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
         self.assertFalse(list(self.target.parent.glob(".liberdus-update-stage-*")))
 
     def test_failed_import_leaves_previous_plugin_and_profile(self):
@@ -103,7 +124,7 @@ class UpdateTests(unittest.TestCase):
             run.return_value.returncode = 1
             with self.assertRaisesRegex(ValueError, "import or isolated self-test"):
                 update(self.bundle, self.home)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.0")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
         self.assertEqual(self.preserved(), before)
 
     def test_publish_failure_restores_old_plugin(self):
@@ -117,7 +138,7 @@ class UpdateTests(unittest.TestCase):
         with patch("liberdus_moderator.update_pilot.os.replace", side_effect=fail_new_publish):
             with self.assertRaisesRegex(OSError, "simulated publish failure"):
                 update(self.bundle, self.home)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.0")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
         self.assertTrue((self.target / "previous-version-marker").exists())
 
 

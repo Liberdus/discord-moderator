@@ -167,6 +167,41 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["allowed_mentions"].to_dict()["parse"], [])
         self.adapter.handle_message.assert_not_called()
 
+    async def test_private_incident_displays_saved_jev_without_secret_or_provider_access(self):
+        from dataclasses import replace
+        from liberdus_moderator.classifier import ShadowClassifier, RUBRIC
+        from liberdus_moderator.config import ClassifierSettings
+        self.adapter.policy = replace(self.adapter.policy, schema_version=2, ai_enabled=True,
+            classifier=ClassifierSettings(mode="shadow", max_daily_calls=10, max_total_calls=10,
+                daily_budget_microusd=50000, total_budget_microusd=50000))
+        self.adapter.live = LiveSession(Engine(self.adapter.policy, self.adapter.store))
+        provider = AsyncMock(return_value={"model": "jev-1.13.0", "answers": {"context": {
+            "type": "choice", "choice": "quoted_warning", "confidence": 0.8,
+            "probabilities": {key: 0.8 if key == "quoted_warning" else 0.05 for key in RUBRIC["criteria"]}}},
+            "usage": {"input_tokens": 500, "output_tokens": 40}})
+        worker = ShadowClassifier(self.adapter.live.engine, provider)
+        for i, channel in enumerate((10, 11, 12)):
+            self.adapter.receive(self.message(100+i, channel))
+        await self.drain()
+        identity = self.adapter.store.incidents()[0]["id"]
+        await worker.evaluate_one(identity)
+        self.channel.send.reset_mock()
+        before = self.adapter.live.engine.status()
+        with patch("liberdus_moderator.hermes_adapter.current_secret_scope", side_effect=AssertionError("no secret read")), \
+                patch("liberdus_moderator.jev.evaluate", side_effect=AssertionError("no provider call")):
+            self.adapter.receive(self.message(302, 20, 98, "!mod incident " + identity))
+            await self.drain()
+        self.assertEqual(self.adapter.live.engine.status(), before)
+        self.channel.send.assert_awaited_once()
+        args, kwargs = self.channel.send.call_args
+        self.assertIn("JEV (saved shadow): quoted_warning", args[0])
+        self.assertIn("no new AI call", args[0])
+        self.assertNotIn("Repeated test message", args[0])
+        self.assertLess(len(args[0]), 1900)
+        self.assertEqual(kwargs["allowed_mentions"].to_dict()["parse"], [])
+        provider.assert_awaited_once()
+        await worker.close()
+
     async def test_edit_fetch_failure_records_gap_and_discards_pending_window(self):
         self.adapter.receive(self.message())
         await self.drain()

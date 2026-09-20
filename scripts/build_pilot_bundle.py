@@ -23,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--jev-output", type=Path, help="Optional owner-run JEV setup zipapp")
-    parser.add_argument("--update-output", type=Path, help="Optional stopped-pilot 0.3.0 to 0.3.1 code updater")
+    parser.add_argument("--update-output", type=Path, help="Optional stopped-pilot 0.3.0/0.3.1 to 0.3.2 code updater")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     build(root, args.config, args.output)

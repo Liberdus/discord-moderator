@@ -1,5 +1,7 @@
 # Private moderation self-test
 
+**Current release:** the 0.3.1 installation steps below are historical. The running pilot already passed its self-test. For the selected saved-JEV-result feature, use the [0.3.2 update instructions](incident-review.md); the same nine-case self-test remains available.
+
 Version 0.3.1 adds `!mod selftest` for an authorized operator in `bot-mod`.
 The command runs nine fixed checks through the moderation engine and command
 handlers, then returns one private pass/fail summary. It accepts no arguments.
@@ -116,9 +118,9 @@ To build the owner-run bundles from the repository's validated local policy:
 ```bash
 python3 scripts/build_pilot_bundle.py \
   --config config.local.toml \
-  --output /tmp/liberdus-install-pilot-0.3.1-20260920.pyz \
-  --update-output /tmp/liberdus-update-selftest-20260920.pyz
+  --output /tmp/liberdus-install-pilot-0.3.2-20260920.pyz \
+  --update-output /tmp/liberdus-update-0.3.2-20260920.pyz
 ```
 
 The fresh installer still refuses to overwrite an existing installation. The
-separate updater handles only the reviewed 0.3.0 to 0.3.1 code transition.
+current updater handles the reviewed 0.3.0/0.3.1 to 0.3.2 code transition and preserves an existing off or shadow policy. The original 0.3.1 updater described above remains a historical artifact.

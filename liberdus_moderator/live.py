@@ -81,12 +81,14 @@ class LiveSession:
                     f"JEV: {status['classifier_mode']} / {status['classifier_state']}\n"
                     f"AI attempts: {status['ai_attempts']} | Enforcement: disabled")
         if event.command in ("incident", "explain"):
+            from .classification_view import format_classification
             data = response["data"]
             # Saved evidence text never becomes outbound instructions, markdown, or mentions.
             return (f"Incident {data['id']} | revision {data['revision']}\n"
                     f"Rule: {data['rule_id']} | State: {data['status']}\n"
                     f"Author ID: {data['author_id']} | Evidence items: {len(data['evidence'])}\n"
-                    "Saved code-rule evidence; enforcement disabled. Reports are snapshots and may be superseded.")
+                    "Saved code-rule evidence; enforcement disabled. Reports are snapshots and may be superseded.\n"
+                    + format_classification(data["classification"]))
         return "Moderation setting updated. Enforcement remains disabled."
 
     def claim_report(self):
