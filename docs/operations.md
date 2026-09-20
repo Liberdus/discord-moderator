@@ -1,6 +1,6 @@
 # Operations: offline implementation
 
-Status: September 20, 2026. This guide describes the offline CLI and core. The owner has verified the live report path, edit/deletion handling, command transitions, wrong-channel rejection, ignored DMs, and restart recovery, and received 9/9 from the installed synthetic self-test. The unauthorized-member live check is explicitly deferred; other unconfirmed cases remain recorded in [live-pilot.md](live-pilot.md). The operator has activated the small [JEV shadow trial](jev.md) and supplied the first successful matching incident result: `announcement`, confidence 0.98, 275 ms, one attempt. Further comparison examples remain pending. Enforcement stays disabled. The historical build plan is not an installation record.
+Status: September 20, 2026. This guide describes the offline CLI and core. The owner has verified the live report path, edit/deletion handling, command transitions, wrong-channel rejection, ignored DMs, and restart recovery, and received 9/9 from the installed synthetic self-test. The unauthorized-member live check is explicitly deferred; other unconfirmed cases remain recorded in [live-pilot.md](live-pilot.md). The operator has activated the small [JEV shadow trial](jev.md) and supplied successful announcement and promotion results matching both intended labels. Local accounting records two attempts; the quoted-warning comparison remains pending. Enforcement stays disabled. The historical build plan is not an installation record.
 
 ## Environment and configuration
 
