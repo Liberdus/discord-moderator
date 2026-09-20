@@ -123,7 +123,7 @@ Keep JEV off, AI/enforcement disabled, and the approved scope unchanged. Use the
 | --- | --- | --- |
 | Pause/resume | State changes and a new report after resume are operator-confirmed; see the checkpoint below. | Paused-pattern suppression still needs explicit confirmation that the paused test messages were posted without a report. |
 | Same-channel repetition — passed | Operator supplied incident `9b8820010d384c94ac575a2c97a31ce1`, revision 1. | `same_channel_repeat`, four copies and four evidence links in `bot-test-1`, reported privately. |
-| Edited evidence | Create a fresh three-channel incident, then edit one copy to different text before the 120-second window closes. Run `!mod incident NEW_ID` in `bot-mod`. | The current incident is withdrawn when fewer than three matching channels remain, or expired if the time window elapsed. The original report remains unchanged. |
+| Edited evidence — passed | Operator supplied the lookup for incident `0e4677d84316465bb19dbe2c788bb283`, revision 2, after the instructed edit. | `State: withdrawn`; the three saved evidence items and original report remain historical snapshots. |
 | Deleted evidence | Delete one of your disposable test messages, then inspect `!mod status`. | A coverage reset with `deleted_message`; current detection evidence is cleared. Already-delivered reports remain historical. |
 | Command authorization | Try your own `!mod pause` in `bot-test-1`; have a non-operator who already has access try it in `bot-mod`. Check status from your authorized account. | No state change or privileged command response for either attempt. Do not grant extra access just for this test. |
 | DMs/mentions | DM the bot and mention it in an approved test channel. | No general conversation or tool dispatch. A test-channel mention is ordinary rule evidence; it is not an admin command. |
@@ -158,4 +158,17 @@ Next, test edits using a fresh incident:
 3. Allow a few seconds for processing. In `bot-mod`, run `!mod incident NEW_ID` with the ID from this new report, not the earlier single-channel report.
 4. Expect `State: withdrawn`. The original report stays visible as a historical snapshot. If the result is `expired`, the window elapsed; use a fresh phrase and retry to verify edit handling.
 
-No live edit outcome has been supplied yet. Record it before treating that case as passed.
+The operator subsequently supplied the expected withdrawn result; see the checkpoint below.
+
+## Edit withdrawal recorded — September 20, 2026
+
+The operator supplied the corrected lookup for incident `0e4677d84316465bb19dbe2c788bb283`: revision 2, `cross_channel_repeat`, `State: withdrawn`, author `977263877391794217`, three saved evidence items, enforcement disabled. This matches the instructed edit test and confirms live withdrawal after a matching copy changes. The three evidence items are the retained triggering snapshot, not a count of currently matching messages. The original report remains visible as history.
+
+Next, test deletion handling:
+
+1. Run `!mod status` in `bot-mod` and note the current `Coverage resets` count.
+2. Post `Liberdus deletion handling test.` once in `bot-test-1`. Wait a few seconds, then delete that disposable message from `bot-test-1`.
+3. Wait a few seconds and run `!mod status` in `bot-mod`, without sending other test-channel messages in between.
+4. Expect `Coverage resets` to increase, `Last: deleted_message`, and `Messages: 0`. Connection should remain true, mode `report_only`, JEV `off / off`, AI attempts zero and enforcement disabled.
+
+A monitored-channel deletion conservatively clears the entire working detection window and cancels pending reports; open incidents become `needs_revalidation`. Historical incidents and delivered reports remain. The already-withdrawn edit incident keeps its withdrawn state. This test does not require another spam report. Record the live status result before marking deletion handling passed.

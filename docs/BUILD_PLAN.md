@@ -892,3 +892,20 @@ The operator supplied a private report for incident `9b8820010d384c94ac575a2c97a
 **Next test: edited evidence.** Use a fresh three-channel incident to have the 120-second cross-channel window available. Post `Liberdus message editing test.` once in each of `bot-test-1`, `bot-test-2` and `bot-test-3`. After the new private report arrives, promptly edit the copy in `bot-test-3` to `This message has been corrected.`. Complete the edit within 120 seconds of the first test post, then allow a few seconds for processing. In `bot-mod`, run `!mod incident NEW_ID`, replacing `NEW_ID` with this new report's incident ID. Expect `State: withdrawn` because only two channels still contain matching text. If the incident expired before the edit, `expired` does not prove edit handling; repeat with a fresh phrase. Already-posted reports remain historical snapshots and are not edited or deleted by this plugin.
 
 The live edit test remains pending. Deletion handling, command authorization, restart recovery and explicit paused-pattern suppression confirmation also remain pending. These test instructions do not expand the approved channel scope or enable AI/enforcement.
+
+### 10.11 Edited evidence withdrawal passed — September 20, 2026
+
+The operator corrected the earlier pasted report with the current incident lookup:
+
+```text
+Incident 0e4677d84316465bb19dbe2c788bb283 | revision 2
+Rule: cross_channel_repeat | State: withdrawn
+Author ID: 977263877391794217 | Evidence items: 3
+Saved code-rule evidence; enforcement disabled. Reports are snapshots and may be superseded.
+```
+
+This is the expected outcome of the instructed edit test: changing one of the three matching copies leaves fewer than three matching channels, so the incident advances to revision 2 and is withdrawn. Mark this live edit-withdrawal case passed from operator evidence. `Evidence items: 3` preserves the last triggering evidence snapshot for audit history; it does not mean three current messages still match. The original Discord report remains a historical snapshot.
+
+**Next test: deletion handling.** In `bot-mod`, run `!mod status` and note `Coverage resets`. Post `Liberdus deletion handling test.` once in `bot-test-1`, wait a few seconds, then delete that disposable test-channel message. Wait a few seconds and run `!mod status` again in `bot-mod`, without posting other test messages in between. Expect the reset count to increase, `Last: deleted_message`, and `Messages: 0`. The bot should remain connected and in `report_only`, with JEV off, zero AI attempts and enforcement disabled. A new spam report is not required for this test.
+
+The current implementation conservatively clears the whole working detection window on a monitored-channel deletion, cancels pending reports and marks open incidents `needs_revalidation`. It retains incident history and delivered reports. This already-withdrawn edit incident is not reopened or revised by that reset. Deletion handling remains pending until live output is supplied; authorization, restart recovery and explicit paused-pattern suppression confirmation also remain pending. JEV stays deferred/off. This checkpoint changes documentation only.
