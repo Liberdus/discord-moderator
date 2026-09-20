@@ -9,9 +9,32 @@ This checkpoint supersedes unknowns in the September 15 inventory below; the old
 - `platforms.discord.enabled` is false in both profiles. The owner restarted the shared user gateway, now PID 814234 serving default and liberdus-mod. Telegram's runtime status belongs to that PID. The recorded Discord connection belongs to old PID 800855 and is stale, not a live connection probe.
 - The operator supplied the server, bot, three test-channel, private command-channel, and operator IDs. They are saved in ignored `config.local.toml`, with AI, enforcement, and optional logs disabled. Numeric validation is not identity verification.
 - The core and preflight tests pass on Python 3.11.16 and 3.12.3 (77 tests). The package now accepts Python >=3.11. This is compatibility evidence for this package, not evidence of successful loading into Hermes.
-- The separate [read-only preflight](preflight.md) checks token identity, guild membership, text-channel scope, and effective permissions without reading or sending messages or starting a gateway. Its live output remains pending.
+- The separate [read-only preflight](preflight.md) checks token identity, guild membership, text-channel scope, and effective permissions without reading or sending messages or starting a gateway. The operator ran it and supplied passing live metadata checks on September 20; details below.
 
 Still required: verify the exact installed plugin interface, implement the event/report adapter with no conversational fallback, verify intents and channel access, and complete the Phase 4 live tests below. No live moderation adapter or report sender has been installed by this checkpoint.
+
+## September 20 Discord preflight result
+
+The operator ran the owner-side preflight and supplied its output. Token identity matches bot `1548537340870533150` in server `746426387606274199`.
+
+| Channel | ID | Bot can view/history | Bot can send | Everyone hidden | Administrator |
+| --- | --- | --- | --- | --- | --- |
+| bot-test-1 | 1551249559819264030 | yes | no | yes | no |
+| bot-test-2 | 1551249642216357908 | yes | no | yes | no |
+| bot-test-3 | 1551249693399584818 | yes | no | yes | no |
+| bot-mod | 1551252553331642558 | yes | yes | yes | no |
+
+All required metadata permission checks passed. An additional role/member overwrite `1302455329795342377` grants view access in all four channels; its identity and membership have not been audited. The preflight neither read nor sent messages. Gateway intents, event capture, and delivery remain unverified; the bot has not been activated by this result.
+
+### Selected integration direction
+
+Use a dedicated registered Hermes platform adapter for this code-only pilot, with stock Discord disabled in both profiles. The normal Discord plugin's native listeners cannot prevent its conversational handler from also seeing events. The moderation adapter must own the single bot connection, convert native events into core inputs, and route only independently authorized private commands and fixed reports. It must never invoke the base adapter's conversational `handle_message` path or expose generic outbound sending to agent/cron tools.
+
+The exact c1488 upstream source supports `PluginContext.register_platform`, profile-scoped secret lookup, and a common Discord-token connection lock (`discord-bot-token`). Its plugin enablement pass can automatically enable registered platforms, so registration alone is not a sufficient off switch: explicit activation and stock-platform exclusion must be tested through the real config loader before installation.
+
+`scripts/inspect_hermes_runtime.py` is the next owner-run check. It reads installed source/version metadata and imports the required interfaces using the installation's Python under an empty temporary HOME/HERMES_HOME. It omits inherited credentials and raw import logs, disables bytecode writes, and blocks network/process creation during the child import probe. It does not call the real profile configuration loader, load plugins, change packages, or restart services. This probe passed its interface checks against the public c1488 source with isolated Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3; the installed-environment result is still pending.
+
+The adapter itself is not implemented or installed yet. Keep both stock Discord configurations disabled while implementing and testing the adapter's lifecycle, bounded edit handling, durable report delivery, and fail-closed command path.
 
 ## Historical September 15 review
 
