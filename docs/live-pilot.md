@@ -97,3 +97,7 @@ hermes -p default gateway restart
 Confirm its current-process status is disconnected before copying/restoring SQLite. Keep stock Discord disabled. The state database and YAML backup paths are profile-local. Follow [SQLite backup instructions](recovery.md), including WAL-safe backup; do not copy only a live main database file. Restart begins a fresh coverage window, cancels pending old-window reports, and marks interrupted sends uncertain. Never change uncertain deliveries back to pending without checking Discord and designing an explicit reconciliation step.
 
 Plugin updates are manual and version-reviewed. Do not restore a saved configuration wholesale after unrelated configuration changes; use the protected backup to inspect/revert only the pilot changes. Telegram belongs to the default profile and should remain configured as before.
+
+## JEV discussion checkpoint — September 20, 2026
+
+The operator paused installation to discuss an optional JEV classifier. [Build plan section 10.6](BUILD_PLAN.md#106-optional-jev-classifier--discussion-proposal-september-20-2026) records the researched proposal and default-off/shadow/report-only design. The existing installer remains code-only and has no JEV client, key, or runtime flag. Resume deployment after the discussion resolves the intended scope.

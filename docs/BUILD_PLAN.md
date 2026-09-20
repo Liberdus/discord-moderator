@@ -718,3 +718,89 @@ Acceptance additions:
 | Copies are outside the rolling window or in unmonitored channels | They do not contribute; reports do not claim those channels were reviewed. |
 | Discord repeats an event, a message is edited, or the VPS restarts | Restore unexpired state, deduplicate IDs, update the pattern evidence, and avoid duplicate incidents/actions. |
 | An incident spans channels with different modes or permissions | Validate each proposed target independently; no action in a report-only or unauthorized channel. |
+
+
+### 10.6 Optional JEV classifier — discussion proposal, September 20, 2026
+
+**Status:** researched and proposed; not implemented, configured, installed, or enabled. The operator paused the pending plugin installation to discuss this addition. The existing installer remains the code-only pilot. This proposal extends Phase 6 and does not bypass the Phase 4 live transport acceptance tests.
+
+**Recommendation:** add JEV behind a default-off classifier mode, evaluate it in shadow mode, and use measured results to decide whether it should annotate private moderation reports. Keep Discord collection, authorization, repeat counting, timestamps, budgets, and all action decisions in code. Hermes remains the host agent framework; JEV would be a separate hosted AI provider used by this plugin, not a second Discord bot or a replacement gateway.
+
+#### Verified product facts and limits
+
+- TypeSafe AI's official JEV API accepts input state and typed questions at `https://api.typesafe.ai/v1/systemone`. Choice selects among defined labels, Score rates an ordered descriptive rubric, and Noul returns a yes/no probability. A normal generative model can also return structured output; JEV's potential benefit here is the cost/latency of narrowly scoped judgments. [Official introduction](https://docs.typesafe.ai/introduction), [API reference](https://docs.typesafe.ai/api)
+- The listed model is `jev-1.13.0`, priced at **$0.042 per million input tokens**, with output tokens free. Pin the model rather than the moving `jev-latest` alias. Example estimate: 100,000 evaluations at 1,000 total input tokens each costs $4.20 at that rate, before retries, gateway markup, or other model calls. This is arithmetic from the published price, not a usage measurement. Our present code-only pilot has zero model cost; JEV adds cost to it and may reduce future generative-review costs. [Official model reference](https://docs.typesafe.ai/models)
+- The vendor describes 70–500 ms end-to-end latency; this is not a guarantee of under 150 ms from our VPS. Measure actual median/p95 latency, failures, and queue delay. [Vendor launch report](https://typesafe.ai/blog/introducing-system-one-models-and-jev)
+- Choice/Score confidence is derived from the returned probability distribution; `confidence = 0.98` is not a measured 98% accuracy on Liberdus messages. Noul has no separate confidence field. Score is a probability-weighted position on a zero-based rubric and can be fractional, so do not copy a `score === 5` branch from an illustrative example. Validate all returned data and test policy-specific thresholds. [Confidence](https://docs.typesafe.ai/confidence), [Score semantics](https://docs.typesafe.ai/primitives/score)
+- The vendor documents literal interpretation, numerical/counting errors, irrelevant-context sensitivity, and adversarial-content failures. Structured output prevents some format errors; it does not make classification immune to manipulation or mistakes. [Known limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13)
+- This integration would send selected content to a hosted provider. TypeSafe's policy says inputs are not used for training/fine-tuning, but it describes input collection and retention; do not assume zero retention. Confirm the chosen account/provider's applicable handling before sending Discord content. Use the official provider or a deliberately selected gateway, not an unreviewed community proxy. [Privacy policy](https://typesafe.ai/legal/privacy-policy)
+
+#### Proposed responsibilities
+
+| Component | Responsibility |
+| --- | --- |
+| Existing code rules | Count repeated messages/channels and windows; detect configured domains; enforce scope, authorization, pause state, and delivery checks. No model needed. |
+| Optional JEV adapter | Judge bounded semantic questions: apparent solicitation, quoted scam reporting, harassment context, or promotional intent. Return probabilities and labels as review evidence. It cannot establish whether a URL is actually malicious without additional evidence. |
+| Moderators | Review ambiguous/disputed cases and label evaluation examples. Initially all decisions remain report-only. |
+| Future optional generative reviewer | Explain difficult cases using a separate bounded, tool-free request if later selected. JEV must not automatically launch a general Hermes agent with tools. |
+
+Proposed flow, keeping the existing code report path independent:
+
+```text
+Approved Discord test channels
+              |
+       Scope + code rules
+              |
+       Existing incident
+          /         \
+ Fixed private     JEV mode gate
+ code report            |
+                  Bounded queue
+                        |
+                  JEV evaluation
+                        |
+               Save typed result
+                /             \
+          shadow mode      report_only
+          local record     private note
+```
+
+Start with one deduplicated evaluation per selected incident revision, not one per repeated copy. The first experiment can compare solicitation with a legitimate announcement or a quoted scam warning. If we evaluate only existing incidents, JEV cannot discover semantic problems the code never selected. A separate, bounded sample of other approved test-channel messages is an option for measuring that gap; broader screening is a later scope decision.
+
+#### Proposed feature flag and rollout
+
+Use one mode flag instead of several overlapping enable switches:
+
+| Proposed `classifier.mode` | Behavior |
+| --- | --- |
+| `off` — default | Existing behavior; zero classifier calls, no provider client/key lookup, and no content sent to JEV. |
+| `shadow` | Evaluate explicitly selected inputs and record results/usage locally; do not alter, suppress, or add Discord reports based on JEV. This mode still makes paid external AI calls. |
+| `report_only` | Validated results may annotate/group selected private review reports. They cannot suppress an existing code-rule report, change authorization/policy, post publicly, delete messages, or run tools. |
+
+Conceptual configuration, **not accepted by the current schema and not a copy/paste deployment setting**:
+
+```toml
+[classifier]
+provider = "jev"
+mode = "off"
+model = "jev-1.13.0"
+```
+
+The current schema intentionally rejects AI enablement and unknown tables. Implementation must explicitly version/migrate that contract: retain `ai_enabled` as a master prohibition, require it to be true for any non-off classifier mode, and leave `actions_enabled = false`. Adding a JEV key alone must never activate inference. Resolve `TYPESAFE_API_KEY` through the moderation profile's scoped secret reader and pass it explicitly to the provider client; never borrow another profile's key or commit it.
+
+Implementation work if this proposal is adopted:
+
+1. Introduce a provider-neutral classifier interface plus a small async JEV client. Keep provider I/O in a separate bounded worker so a slow provider cannot block Discord event processing or existing code reports.
+2. Before scheduling, snapshot and bind the current evidence revision, policy/rubric version, selected model, and bounded context. Keep member identities local where not needed; exclude private moderator conversations, secrets, unrelated channels, and bot logs from provider context. User text remains data, not authority to change the question or invoke tools.
+3. Require configured input limits, request rate, concurrency, daily calls/tokens/spend, and a total attempt budget before non-off activation. Reserve usage for in-flight attempts and account for errors/timeouts; a timeout may still be billable. Override SDK retry defaults explicitly. [SDK retry controls](https://docs.typesafe.ai/sdk/python/api/retries)
+4. Persist model/rubric version, probabilities, confidence where available, returned usage, locally estimated price, latency, and outcome. Distinguish not evaluated, failed, uncertain, and evaluated; do not interpret provider failure as a clean/safe result.
+5. Recheck evidence, channel scope, pause/mode, and policy before a queued call and before applying its result. Discard results made stale by edits, deletions, pause, scope changes, or reconnect coverage resets. Switching to off stops new scheduling and ignores late results; it cannot undo data already submitted or incurred charges.
+6. On provider outage, invalid response, exhausted budget, or full queue, continue current code-only behavior and expose reduced semantic coverage. No automatic fallback to a general agent. Count JEV calls separately from generative-model calls; status must not continue to claim zero AI calls when JEV is active.
+
+#### Evaluation before enabling report annotations
+
+Use moderator-labeled synthetic/redacted fixtures first, including ordinary discussion, legitimate cross-posts, scam promotion, quoted scam reports, sarcasm, multilingual cases, obfuscated text, and adversarial classification instructions. Measure false positives, missed cases, calibration, and latency separately by category. Keep an explicit uncertain outcome. A confidently benign result cannot authorize an action or erase code evidence.
+
+Acceptance tests must cover: off mode performs no provider I/O; both profile keys and results stay isolated; existing code reports continue during provider failures; request/usage limits cannot be exceeded by concurrent scheduling or hidden retries; edits invalidate cached/in-flight results; duplicate events do not repeat evaluations; JEV outputs cannot change commands, policy, scope, or tool permissions; and a shadow result never creates a Discord post.
+
+**Open discussion:** start with incident enrichment only, or include a bounded sample of other test-channel messages? Which semantic categories matter most to moderators? Provider access/data handling, live budget, and calibrated thresholds remain unset. No JEV account, key, purchase, SDK installation, inference request, or runtime flag was added during this research.
