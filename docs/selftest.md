@@ -1,6 +1,6 @@
 # Private moderation self-test
 
-**Current release:** the 0.3.1 installation steps below are historical. The running pilot already passed its self-test. The owner also confirmed the saved-JEV lookup. For its new ASCII layout, use the [0.3.3 update instructions](incident-review.md); the same nine-case self-test remains available.
+**Current release:** the 0.3.1 installation steps below are historical. The running pilot already passed its self-test. The owner also confirmed the saved-JEV lookup and its 0.3.3 ASCII layout. The [update instructions](incident-review.md) are retained for older installations; this pilot needs no repeat update. The same nine-case self-test remains available.
 
 Version 0.3.1 adds `!mod selftest` for an authorized operator in `bot-mod`.
 The command runs nine fixed checks through the moderation engine and command

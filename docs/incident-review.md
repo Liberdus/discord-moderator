@@ -2,7 +2,7 @@
 
 The owner confirmed the **0.3.2** lookup live in `bot-mod`: the quoted-warning incident returned its saved label, confidence 1.00, evaluated revision 1 and historical status while the incident was revision 2, `needs_revalidation`. The supplied reply said no new AI call; no separate before/after accounting transcript was supplied.
 
-Version **0.3.3** gives `!mod incident ID` and its `!mod explain ID` alias a narrow, aligned layout. Source and the owner-run update bundle are ready; deployment and the phone display check remain pending. The previous provider evaluations do not need repeating.
+Version **0.3.3** gives `!mod incident ID` and its `!mod explain ID` alias a narrow, aligned layout. The owner has supplied the new formatted reply, confirming the live incident display. The lookup and formatting step is complete; no repeat update or provider evaluation is needed.
 
 ## What the command shows
 
@@ -51,6 +51,8 @@ Friendly display names replace internal underscores: `needs_revalidation` appear
 These lookups do not start a classifier worker, access a key, call TypeSafe or Hermes, retry an evaluation, change classifier counters/budgets, prune evidence, or change reports. The normal live command receipt is still recorded for duplicate prevention. Authorization still requires the configured guild, private command channel and operator identity. The sender suppresses mentions and bounds replies; message content and arbitrary provider text are not copied into the panel.
 
 ## Update the existing pilot on db2
+
+**Completed for this pilot:** the owner supplied the formatted reply shown here. These steps are retained for older installations and recovery; do not rerun the fixed updater on the already updated plugin.
 
 Run these steps as **`hermes`**. The developer account cannot access the live profile. The fixed updater accepts installed versions 0.3.0, 0.3.1 or 0.3.2 and installs 0.3.3. It supports the existing validated code-only or shadow policy. It preserves configuration, `.env`, moderation policy, database and budget counters, and retains the old plugin directory for rollback. It makes no provider call or service restart itself.
 
@@ -101,7 +103,7 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 
 The code detects patterns, such as a member repeating a message across three channels. JEV supplies a narrow context label for an already-detected incident: promotion, announcement, quoted warning, other or unclear. A moderator can compare that label with the evidence to distinguish likely promotion from community updates or warnings that quote suspicious language. Neither an announcement label nor a promotion label proves permission or abuse.
 
-The private lookup has been confirmed. After checking the new layout, use it to review a small, varied set of deliberately written rule-triggering examples in the existing test channels. Record the intended label, actual label and disagreements, including ordinary discussion repeated innocently, mixed intent, multilingual examples and adversarial instructions. Ordinary messages that never trigger a rule are not evaluated by this integration. The three completed examples establish connectivity and initial behavior, not general accuracy or confidence calibration.
+The private lookup and new reply format have been confirmed. Next, use them to review a small, varied set of deliberately written rule-triggering examples in the existing test channels. Record the intended label, actual label and disagreements, including ordinary discussion repeated innocently, mixed intent, multilingual examples and adversarial instructions. Ordinary messages that never trigger a rule are not evaluated by this integration. The three completed examples establish connectivity and initial behavior, not general accuracy or confidence calibration.
 
 If the labels prove useful, a later selected change can add clearly marked context to automatic private reports or help moderators prioritize review. Report annotations, suppression, broader scanning, production-channel monitoring, automatic actions and launching a general Hermes agent are not implemented by this release. Human review and deterministic rules continue to control the workflow. Shadow mode still applies the existing attempt/spending limits.
 
@@ -110,7 +112,7 @@ If the labels prove useful, a later selected change can add clearly marked conte
 - 130 core/setup tests pass on Python 3.11.16 and 3.12.3. This includes 15 saved-result cases covering authorization, read-only/no-provider behavior, unchanged budgets, current/historical evidence, expiration without writes, edit/revision/reset/pause/disable behavior, missing/malformed data, bounded text and duplicate commands.
 - 32 integration tests pass with reviewed Hermes commit `c1488ac947c9bc33fd65ec464548dc9d8edd6122`, discord.py 2.7.1, aiohttp 3.14.3 and PyYAML 6.0.3. Network requests are blocked/mocked. These include private reply delivery with no secret access/provider call and the stopped-pilot update preserving a shadow policy. Optional unrelated Hermes plugins log missing test-environment dependencies; the Liberdus suite passes.
 - Existing rendering checks also verify ASCII panel width, balanced code fences and intact incident IDs. The example is 593 characters, with a maximum panel width of 32; this is a local text preview, not a live Discord screenshot.
-- The update checks staged code in an isolated temporary profile, runs the fixed nine-case self-test, and retains the previous code for rollback. No real profile, token, live provider request or gateway was accessed during development. The owner confirmed the 0.3.2 lookup; the live 0.3.3 layout remains pending owner verification.
+- The update checks staged code in an isolated temporary profile, runs the fixed nine-case self-test, and retains the previous code for rollback. No real profile, token, live provider request or gateway was accessed during development. The owner confirmed the 0.3.2 lookup and subsequently supplied the 0.3.3 formatted incident reply. The supplied evidence is pasted reply text, rather than a device screenshot or separate deployment log.
 
 Rebuild bundles from the repository and its validated local policy if `/tmp` was cleared:
 
