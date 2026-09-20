@@ -1,10 +1,10 @@
 # Liberdus Discord Moderator
 
-An initial **offline, report-only moderation core** for a planned Hermes plugin. It accepts synthetic Discord-shaped events, applies deterministic rules, and records evidence, review incidents, and pending private-report payloads in SQLite. The moderation core has no runtime dependencies and makes no AI or Discord calls. A separate, explicitly invoked preflight utility makes read-only Discord API requests to verify setup.
+A **report-only moderation core** with an optional, explicitly enabled Hermes Discord pilot plugin. It accepts synthetic Discord-shaped events, applies deterministic rules, and records evidence, review incidents, and pending private-report payloads in SQLite. The moderation core has no runtime dependencies and makes no AI or Discord calls. A separate, explicitly invoked preflight utility makes read-only Discord API requests to verify setup.
 
-**Status, September 20, 2026:** the operator supplied the pilot IDs and created the `liberdus-mod` Hermes profile. Its token was moved into that profile, and stock Discord remains disabled in both profiles. The pilot configuration validates locally; the owner-run Discord preflight confirms bot identity and required channel permissions. Intents, event ingestion, and report delivery remain unverified. See [preflight instructions](docs/preflight.md) and [integration notes](docs/integration.md).
+**Status, September 20, 2026:** the operator supplied the pilot IDs and created the `liberdus-mod` Hermes profile. Its token was moved into that profile, and stock Discord remains disabled in both profiles. The pilot configuration validates locally; the owner-run Discord preflight confirms bot identity and required channel permissions. The owner also verified the installed Hermes interfaces and dependency versions. The optional adapter is implemented and tested offline; installation, Portal intent confirmation, and live message/delivery acceptance remain pending. See [live pilot installation and recovery](docs/live-pilot.md), [preflight instructions](docs/preflight.md) and [integration notes](docs/integration.md).
 
-## Current flow
+## Offline fixture flow
 
 ```text
 +------------------------------+
@@ -29,11 +29,11 @@ An initial **offline, report-only moderation core** for a planned Hermes plugin.
                v
 +------------------------------+
 | Pending private-report data  |
-| No Discord delivery yet      |
+| CLI does not send to Discord |
 +------------------------------+
 ```
 
-The future Hermes adapter will supply events and deliver approved private reports through the existing bot connection. Public message content is evidence, not authority to change policy or run tools.
+The optional adapter owns one Discord connection inside the existing Hermes gateway, supplies events to the core, and delivers fixed private review reports. It never enters the general Hermes conversation path. Public message content is evidence, not authority to change policy or run tools.
 
 ## Try it locally
 
@@ -81,12 +81,12 @@ An editable package installation is optional: `python3 -m pip install -e .`. It 
 
 A `no_match` decision means **no implemented code rule matched**. It does not claim that a message is safe or that AI reviewed it. Blocked-domain matches are review candidates even when context might make a link legitimate. Reports observe only the configured channels and supported content.
 
-The report outbox contains prepared payloads only: no sender, delivery confirmation, public replies, deletions, bans, kicks, timeouts, or role changes exist in this version. AI and action configuration must remain disabled. Private Discord logs are optional in the plan; durable local incident records are independent of them.
+The CLI prepares report payloads without sending. The optional live adapter records delivery attempts and Discord message IDs; uncertain attempts are never automatically retried. Public replies, deletions, bans, kicks, timeouts, and role changes remain unimplemented. AI and action configuration must remain disabled. Private Discord logs are optional in the plan; durable local incident records are independent of them.
 
 ## Next milestones
 
-1. Verify the installed Hermes interfaces, including unmentioned messages, cached/uncached edits, private command identity, and direct private delivery with zero inference.
-2. Connect the core through the verified ingress path and evaluate it in approved test channels in report-only mode.
+1. Install the disabled pilot plugin in the verified Hermes profile and confirm Message Content Intent in the Developer Portal.
+2. Activate only the custom moderation platform and complete live tests for ordinary messages, edits, private command authorization, reconnects, and zero-inference private reports.
 3. Add bounded contextual AI, usage accounting, and moderator feedback after the transport and core are proven.
 4. Design version-bound approvals and narrowly scoped warnings/single-message deletion before any enforcement. Production expansion requires its own authorization.
 
@@ -98,7 +98,7 @@ The offline work advances part of Phase 5 while Phase 4 integration verification
 python3 -m unittest discover -s tests -v
 ```
 
-The inactive [CI template](docs/ci-workflow.yml) runs the tests and fixture commands on Python 3.11, 3.12, and 3.13, with read-only repository permissions and no secrets. All 81 local tests passed on Python 3.11.16 and 3.12.3; GitHub CI is not enabled yet because the current GitHub CLI login lacks the separate `workflow` scope. Once authorized, move the template to `.github/workflows/ci.yml`. See [operations](docs/operations.md), [recovery](docs/recovery.md), and [integration](docs/integration.md).
+The inactive [CI template](docs/ci-workflow.yml) runs the tests and fixture commands on Python 3.11, 3.12, and 3.13, with read-only repository permissions and no secrets. The 90 core/setup tests pass on Python 3.11.16 and 3.12.3; 16 additional integration tests use the real c1488 Hermes source and discord.py 2.7.1 with network edges mocked. Those integration tests are separate from the CI template and do not constitute a live gateway test; GitHub CI is not enabled yet because the current GitHub CLI login lacks the separate `workflow` scope. Once authorized, move the template to `.github/workflows/ci.yml`. See [operations](docs/operations.md), [recovery](docs/recovery.md), and [integration](docs/integration.md).
 
 [BUILD_PLAN.md](docs/BUILD_PLAN.md) is a verbatim historical planning baseline. Its original status statements and local workstation links are preserved; this README and the operations guide describe current implementation status. It also records feature ideas from Sentinel AI, Defender/Warden, Zeppelin, Modcord, and Omnicord. This initial core is independently implemented; no third-party bot source has been imported.
 

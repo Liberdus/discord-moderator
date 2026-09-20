@@ -11,7 +11,7 @@ This checkpoint supersedes unknowns in the September 15 inventory below; the old
 - The core and preflight tests pass on Python 3.11.16 and 3.12.3 (77 tests). The package now accepts Python >=3.11. This is compatibility evidence for this package, not evidence of successful loading into Hermes.
 - The separate [read-only preflight](preflight.md) checks token identity, guild membership, text-channel scope, and effective permissions without reading or sending messages or starting a gateway. The operator ran it and supplied passing live metadata checks on September 20; details below.
 
-Still required: verify the exact installed plugin interface, implement the event/report adapter with no conversational fallback, verify intents and channel access, and complete the Phase 4 live tests below. No live moderation adapter or report sender has been installed by this checkpoint.
+At that initial checkpoint the adapter and installed interfaces were pending. The subsequent sections record verified installed interfaces and completed offline adapter work. Actual installation, Portal intent confirmation, and Phase 4 live acceptance remain pending.
 
 ## September 20 Discord preflight result
 
@@ -32,9 +32,9 @@ Use a dedicated registered Hermes platform adapter for this code-only pilot, wit
 
 The exact c1488 upstream source supports `PluginContext.register_platform`, profile-scoped secret lookup, and a common Discord-token connection lock (`discord-bot-token`). Its plugin enablement pass can automatically enable registered platforms, so registration alone is not a sufficient off switch: explicit activation and stock-platform exclusion must be tested through the real config loader before installation.
 
-`scripts/inspect_hermes_runtime.py` is the next owner-run check. It reads installed source/version metadata and imports the required interfaces using the installation's Python under an empty temporary HOME/HERMES_HOME. It omits inherited credentials and raw import logs, disables bytecode writes, and blocks network/process creation during the child import probe. It does not call the real profile configuration loader, load plugins, change packages, or restart services. This probe passed its interface checks against the public c1488 source with isolated Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3; the installed-environment result is still pending.
+`scripts/inspect_hermes_runtime.py` is the next owner-run check. It reads installed source/version metadata and imports the required interfaces using the installation's Python under an empty temporary HOME/HERMES_HOME. It omits inherited credentials and raw import logs, disables bytecode writes, and blocks network/process creation during the child import probe. It does not call the real profile configuration loader, load plugins, change packages, or restart services. This probe passed its interface checks against the public c1488 source with isolated Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3; the operator then supplied the installed-environment result: all interfaces passed, the full commit matches, inspected interface files are unmodified, and Python/discord.py/aiohttp/PyYAML versions match (3.11.16 / 2.7.1 / 3.14.3 / 6.0.3).
 
-The adapter itself is not implemented or installed yet. Keep both stock Discord configurations disabled while implementing and testing the adapter's lifecycle, bounded edit handling, durable report delivery, and fail-closed command path.
+The dedicated adapter is now implemented with bounded event/edit handling, code-only private commands, durable delivery outcomes, and no conversational fallback. The disabled installer and real Hermes loader/config boundaries pass offline tests. Installation and live acceptance are still pending; keep both stock Discord configurations disabled. See [live pilot instructions](live-pilot.md) for installation, activation conditions, tested behavior, and recovery.
 
 ## Historical September 15 review
 

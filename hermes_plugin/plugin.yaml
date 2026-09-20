@@ -1,0 +1,6 @@
+name: liberdus-moderator
+label: Liberdus Moderation
+kind: platform
+version: 0.2.0
+description: Explicitly enabled code-only, report-only Discord moderation for the Liberdus test pilot.
+author: Liberdus

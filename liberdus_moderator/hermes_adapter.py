@@ -1,0 +1,373 @@
+"""Version-pinned, code-only Hermes platform adapter. No conversational dispatch."""
+
+import asyncio
+import contextlib
+import fcntl
+import importlib.metadata
+import inspect
+import os
+from pathlib import Path
+import subprocess
+
+import discord
+from gateway.config import Platform, load_gateway_config
+from gateway.platforms.base import BasePlatformAdapter, SendResult
+from gateway.platforms._shared import get_scoped_secret
+from hermes_cli.config import read_user_config_raw
+from hermes_constants import get_hermes_home
+
+from .config import Config
+from .engine import Engine
+from .hermes_plugin import PLATFORM, explicit_activation
+from .live import LiveSession, delivery_nonce, parse_command
+from .models import MessageEvent
+from .storage import Store
+
+VERIFIED_COMMIT = "c1488ac947c9bc33fd65ec464548dc9d8edd6122"
+
+
+def verify_runtime():
+    root = Path(inspect.getfile(BasePlatformAdapter)).resolve().parents[2]
+    result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                            capture_output=True, text=True, timeout=5)
+    if result.returncode or result.stdout.strip() != VERIFIED_COMMIT:
+        raise ValueError("Hermes commit requires compatibility review")
+    changed = subprocess.run(["git", "-C", str(root), "diff", "HEAD", "--quiet", "--",
+                              "gateway", "hermes_cli/plugins.py", "agent/secret_scope.py"],
+                             capture_output=True, timeout=5)
+    if changed.returncode or importlib.metadata.version("discord.py") != "2.7.1":
+        raise ValueError("Runtime interfaces or Discord library require compatibility review")
+
+
+def snapshot(message):
+    """Copy SDK evidence immediately; never hand mutable SDK objects to the queue."""
+    return MessageEvent(
+        guild_id=str(message.guild.id), channel_id=str(message.channel.id), message_id=str(message.id),
+        author_id=str(message.author.id), content=message.content, created_at=message.created_at.timestamp(),
+        edited_at=message.edited_at.timestamp() if message.edited_at else None,
+        is_bot=message.author.bot, is_webhook=message.webhook_id is not None,
+        is_thread=isinstance(message.channel, discord.Thread), has_attachments=bool(message.attachments),
+    )
+
+
+class PilotClient(discord.Client):
+    def __init__(self, adapter):
+        intents = discord.Intents.none()
+        intents.guilds = intents.guild_messages = intents.message_content = True
+        super().__init__(intents=intents, max_messages=None, chunk_guilds_at_startup=False,
+                         allowed_mentions=discord.AllowedMentions.none())
+        self.adapter = adapter
+
+    async def on_ready(self):
+        await self.adapter.ready()
+
+    async def on_resumed(self):
+        await self.adapter.ready()
+
+    async def on_disconnect(self):
+        self.adapter.lost_connection()
+
+    async def on_message(self, message):
+        self.adapter.receive(message)
+
+    async def on_raw_message_edit(self, payload):
+        if "content" in payload.data or "attachments" in payload.data:
+            self.adapter.edit(payload.guild_id, payload.channel_id, payload.message_id)
+
+    async def on_raw_message_delete(self, payload):
+        self.adapter.deleted(payload.guild_id, payload.channel_id, (payload.message_id,))
+
+    async def on_raw_bulk_message_delete(self, payload):
+        self.adapter.deleted(payload.guild_id, payload.channel_id, payload.message_ids)
+
+    async def on_error(self, event_method, *args, **kwargs):
+        # Override discord.py's default traceback printing for message callbacks.
+        await self.adapter.fail("callback_failure")
+
+
+class ModerationAdapter(BasePlatformAdapter):
+    def __init__(self, config):
+        super().__init__(config, Platform(PLATFORM))
+        self.client = None
+        self.store = self.live = self.policy = None
+        self.worker = self.receiver = None
+        self.queue = asyncio.Queue(maxsize=200)
+        self.ready_event = asyncio.Event()
+        self.generation = 0
+        self.online = False
+        self.closing = False
+        self.lock_fd = None
+        self.owns_token_lock = False
+        self.next_command_at = 0.0
+
+    async def connect(self, *, is_reconnect=False):
+        if self.client is not None:
+            return self.online
+        try:
+            if not self.config.enabled or not explicit_activation():
+                raise ValueError("Explicit moderation activation is required")
+            verify_runtime()
+            home = get_hermes_home().resolve()
+            # Check both profiles, then check the effective native-platform config.
+            default = read_user_config_raw(home.parent.parent / "config.yaml")
+            if default.get("platforms", {}).get("discord", {}).get("enabled") is not False:
+                raise ValueError("Default Discord must be explicitly disabled")
+            stock = load_gateway_config().platforms.get(Platform.DISCORD)
+            if stock is not None and stock.enabled:
+                raise ValueError("Stock Discord must be disabled")
+            path = home / "moderation.toml"
+            if path.is_symlink():
+                raise ValueError("Moderation configuration must be profile-local")
+            self.policy = Config.from_file(path)
+            database = home / "state/moderation.sqlite3"
+            if Path(self.policy.storage.database_path) != database or self.policy.mode != "report_only":
+                raise ValueError("Expected the profile-local report-only pilot configuration")
+            if self.policy.logs_enabled or self.policy.log_channel_id or self.policy.operator_role_ids or len(self.policy.command_channel_ids) != 1:
+                raise ValueError("Initial live pilot supports numeric operator users and one private report channel")
+            token = get_scoped_secret("DISCORD_BOT_TOKEN", None)
+            if not isinstance(token, str) or not token:
+                raise ValueError("Profile bot token is missing")
+            database.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self.lock_fd = os.open(database.parent / "moderation.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if not self._acquire_platform_lock("discord-bot-token", token, "Discord bot token"):
+                raise ValueError("Bot credential already owned by another gateway")
+            self.owns_token_lock = True
+            self.store = Store(str(database))
+            self.live = LiveSession(Engine(self.policy, self.store))
+            self.coverage_gap("startup")
+            self.closing = False
+            self.client = PilotClient(self)
+            await asyncio.wait_for(self.client.login(token), timeout=20)
+            if str(self.client.user.id) != self.policy.bot_user_id:
+                raise ValueError("Bot identity mismatch")
+            self.worker = asyncio.create_task(self.run_worker())
+            self.receiver = asyncio.create_task(self.run_receiver())
+            waiter = asyncio.create_task(self.ready_event.wait())
+            try:
+                await asyncio.wait((waiter, self.receiver), timeout=40, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                waiter.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await waiter
+            if not self.online:
+                raise ValueError("Discord did not establish verified pilot readiness")
+            return True
+        except asyncio.CancelledError:
+            await self.disconnect()
+            raise
+        except Exception:
+            self._set_fatal_error("liberdus_startup_failed", "Moderation startup failed; check the pinned runtime, profile activation, bot intents, and private-channel access.", retryable=False)
+            await self.disconnect()
+            return False
+
+    async def run_receiver(self):
+        try:
+            await self.client.connect(reconnect=True)
+            if not self.closing:
+                await self.fail("discord_connection_ended")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if not self.closing:
+                await self.fail("discord_connection_failed")
+
+    def checked_channel(self, channel_id, *, sending=False):
+        allowed = self.policy.command_channel_ids if sending else (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids)
+        if channel_id not in allowed:
+            raise ValueError("Channel outside pilot scope")
+        channel = self.client.get_channel(int(channel_id))
+        if not isinstance(channel, discord.TextChannel) or str(channel.guild.id) != self.policy.guild_id:
+            raise ValueError("Pilot text channel unavailable")
+        me = channel.guild.me
+        if me is None:
+            raise ValueError("Bot membership unavailable")
+        perms = channel.permissions_for(me)
+        everyone = channel.permissions_for(channel.guild.default_role)
+        if (perms.administrator or everyone.view_channel or not perms.view_channel or not perms.read_message_history
+                or (sending and not perms.send_messages)):
+            raise ValueError("Pilot permissions no longer match")
+        return channel
+
+    async def ready(self):
+        if self.closing:
+            return
+        try:
+            if str(self.client.user.id) != self.policy.bot_user_id:
+                raise ValueError("Bot identity mismatch")
+            for channel in self.policy.monitored_channel_ids:
+                self.checked_channel(channel)
+            for channel in self.policy.command_channel_ids:
+                self.checked_channel(channel, sending=True)
+            if self.online:
+                return
+            self.coverage_gap("reconnect")
+            self.online = True
+            self._mark_connected()
+            self.ready_event.set()
+        except Exception:
+            await self.fail("pilot_readiness_failed")
+
+    def coverage_gap(self, reason):
+        self.generation += 1
+        while not self.queue.empty():
+            self.queue.get_nowait()
+            self.queue.task_done()
+        if self.live is not None:
+            self.live.gap(reason)
+
+    def lost_connection(self):
+        if self.closing or not self.online:
+            return
+        self.online = False
+        self.ready_event.clear()
+        self.coverage_gap("disconnect")
+        self._mark_disconnected()
+
+    def in_scope(self, guild_id, channel_id):
+        return (self.online and guild_id is not None and str(guild_id) == self.policy.guild_id
+                and str(channel_id) in (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids))
+
+    def enqueue(self, kind, value):
+        try:
+            self.queue.put_nowait((self.generation, kind, value))
+        except asyncio.QueueFull:
+            self.coverage_gap("queue_full")
+
+    def receive(self, message):
+        if (not self.in_scope(getattr(message.guild, "id", None), message.channel.id)
+                or message.author.bot or message.webhook_id is not None):
+            return
+        try:
+            channel = str(message.channel.id)
+            if channel in self.policy.command_channel_ids:
+                if str(message.author.id) not in self.policy.operator_user_ids:
+                    return
+                command = parse_command(message.content, str(message.guild.id), channel, str(message.author.id))
+                if command:
+                    self.enqueue("command", (str(message.id), command))
+            else:
+                self.enqueue("message", snapshot(message))
+        except (ValueError, TypeError, AttributeError):
+            self.coverage_gap("invalid_event")
+
+    def edit(self, guild_id, channel_id, message_id):
+        if self.in_scope(guild_id, channel_id) and str(channel_id) in self.policy.monitored_channel_ids:
+            self.enqueue("edit", (str(channel_id), int(message_id)))
+
+    def deleted(self, guild_id, channel_id, message_ids):
+        if self.in_scope(guild_id, channel_id) and str(channel_id) in self.policy.monitored_channel_ids:
+            # A deleted message may still be queued and absent from SQLite. Reset
+            # conservatively so queued evidence cannot resurrect it.
+            self.coverage_gap("deleted_message")
+
+    async def emit(self, channel_id, content, nonce):
+        if not self.online or self.closing:
+            raise ValueError("Moderation transport is offline")
+        channel = self.checked_channel(channel_id, sending=True)
+        return await asyncio.wait_for(channel.send(content, allowed_mentions=discord.AllowedMentions.none(),
+            nonce=nonce, suppress_embeds=True, silent=True), timeout=20)
+
+    async def flush_reports(self):
+        while self.online:
+            report = self.live.claim_report()
+            if report is None:
+                return
+            try:
+                sent = await self.emit(report["payload"]["channel_id"], report["payload"]["content"],
+                                       delivery_nonce("report:" + report["id"]))
+                self.live.finish_report(report["id"], str(sent.id))
+            except asyncio.CancelledError:
+                self.live.finish_report(report["id"])
+                raise
+            except Exception:
+                # No application retry: the server may have accepted the request.
+                self.live.finish_report(report["id"])
+
+    async def run_worker(self):
+        try:
+            while True:
+                generation, kind, value = await self.queue.get()
+                try:
+                    if generation != self.generation or not self.online:
+                        continue
+                    if kind == "message":
+                        self.live.engine.process(value)
+                    elif kind == "edit":
+                        try:
+                            channel = self.checked_channel(value[0])
+                            message = await asyncio.wait_for(channel.fetch_message(value[1]), timeout=8)
+                            evidence = snapshot(message)
+                            if evidence.channel_id != value[0] or evidence.message_id != str(value[1]):
+                                raise ValueError("Fetched edit identity mismatch")
+                            if generation == self.generation and self.online:
+                                result = self.live.engine.process(evidence)
+                                if result["reason"] == "conflicting_event_version":
+                                    self.coverage_gap("unavailable_edit")
+                        except (discord.HTTPException, ValueError, TypeError, AttributeError, TimeoutError):
+                            self.coverage_gap("unavailable_edit")
+                        # One bounded fetch at a time, at most four per second.
+                        await asyncio.sleep(0.25)
+                    elif kind == "command":
+                        now = asyncio.get_running_loop().time()
+                        if now < self.next_command_at:
+                            continue
+                        self.next_command_at = now + 1
+                        content = self.live.command(value[1], value[0], self.online)
+                        if content:
+                            try:
+                                await self.emit(value[1].channel_id, content, delivery_nonce("command:" + value[0]))
+                            except Exception:
+                                pass  # Never replay a command after an uncertain response.
+                    # Drain already-arrived edits/messages before handing a report to the network.
+                    if self.queue.empty() and generation == self.generation:
+                        await self.flush_reports()
+                finally:
+                    self.queue.task_done()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await self.fail("worker_failure")
+
+    async def fail(self, code):
+        self.online = False
+        self.ready_event.clear()
+        with contextlib.suppress(Exception):
+            self.coverage_gap("worker_failure")
+        self._set_fatal_error(code, "Liberdus moderation stopped; no conversational fallback. Inspect setup before restarting.", retryable=False)
+        await self.disconnect()
+
+    async def disconnect(self):
+        self.closing = True
+        self.online = False
+        self.ready_event.clear()
+        if self.client is not None:
+            with contextlib.suppress(Exception):
+                await self.client.close()
+        current = asyncio.current_task()
+        for task in (self.worker, self.receiver):
+            if task is not None and task is not current:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+        self.worker = self.receiver = self.client = None
+        if self.store is not None:
+            self.store.close()
+            self.store = self.live = None
+        if self.owns_token_lock:
+            self._release_platform_lock()
+            self.owns_token_lock = False
+        if self.lock_fd is not None:
+            os.close(self.lock_fd)
+            self.lock_fd = None
+        self._mark_disconnected()
+
+    async def send(self, chat_id, content, reply_to=None, metadata=None):
+        return SendResult(success=False, error="Generic Hermes delivery is disabled for the moderation platform")
+
+    async def get_chat_info(self, chat_id):
+        return {"name": "Liberdus moderation", "type": "channel"}
+
+    async def handle_message(self, event):
+        # Defense in depth: this platform cannot enter the general Hermes agent path.
+        return None
