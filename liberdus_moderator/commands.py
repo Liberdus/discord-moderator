@@ -85,6 +85,9 @@ def handle_command(engine: Engine, request: CommandRequest):
         result["data"] = incident
         if name == "explain":
             result["note"] = "Saved rule evidence only; no actions, policy changes, or AI calls."
+    elif name == "selftest" and not arguments:
+        from .selftest import run_selftest
+        result["data"] = run_selftest()
     elif name == "approve":
         return {**result, "ok": False, "error": "enforcement_not_implemented"}
     else:

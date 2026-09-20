@@ -64,7 +64,7 @@ bot-mod: !mod status
 
 Messages never enter Hermes's general conversation handler. Generic Hermes/cron outbound sending is refused. The adapter does not register tools, slash commands, reactions, threads, or public actions. Its separate optional JEV shadow worker makes direct provider calls only after explicit opt-in; see [JEV setup](jev.md).
 
-Supported private text commands are `!mod status`, `!mod pause`, `!mod resume`, `!mod incident ID`, and `!mod explain ID`. Commands require both the configured channel and operator ID. DMs, unauthorized private commands, own/bot/webhook messages, and out-of-scope channels receive no reply. Public bot mentions are ordinary evidence, not commands. Command responses are limited to one per second; duplicate command message IDs are retained in a bounded receipt table and never replayed while retained. `explain` returns saved incident metadata; it does not quote source text or call a model.
+Supported private text commands are `!mod status`, `!mod pause`, `!mod resume`, `!mod incident ID`, and `!mod explain ID`. Version 0.3.1 also adds `!mod selftest` after the [owner-run update](selftest.md); it returns nine synthetic check results without changing live moderation state. Commands require both the configured channel and operator ID. DMs, unauthorized private commands, own/bot/webhook messages, and out-of-scope channels receive no reply. Public bot mentions are ordinary evidence, not commands. Command responses are limited to one per second; duplicate command message IDs are retained in a bounded receipt table and never replayed while retained. `explain` returns saved incident metadata; it does not quote source text or call a model.
 
 ## Failure and delivery behavior
 
@@ -172,3 +172,9 @@ Next, test deletion handling:
 4. Expect `Coverage resets` to increase, `Last: deleted_message`, and `Messages: 0`. Connection should remain true, mode `report_only`, JEV `off / off`, AI attempts zero and enforcement disabled.
 
 A monitored-channel deletion conservatively clears the entire working detection window and cancels pending reports; open incidents become `needs_revalidation`. Historical incidents and delivered reports remain. The already-withdrawn edit incident keeps its withdrawn state. This test does not require another spam report. Record the live status result before marking deletion handling passed.
+
+## Automated self-test available in 0.3.1 — September 20, 2026
+
+The operator asked to reduce manual testing. `!mod selftest` now runs nine fixed, isolated checks and returns one private summary, including deletion-reset and pause/recovery logic. The moderator continues to ignore its own output and other bots/webhooks. Self-tests do not post test messages or change the real pause state, policy or evidence. Follow [self-test deployment and coverage](selftest.md) for the one-time owner-run update; the running 0.3.0 installation has not yet been updated by the developer.
+
+The new command verifies code paths with synthetic inputs and a default test policy. It does not verify real Discord permissions/events or an actual service restart. Keep the remaining live acceptance results explicitly pending until observed. JEV is still deferred/off. No new Discord permissions, bot account or API key is needed.

@@ -154,6 +154,19 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.success)
         self.assertIsNone(await self.adapter.handle_message(object()))
 
+    async def test_private_selftest_reports_without_live_evidence_or_agent_dispatch(self):
+        self.adapter.handle_message = AsyncMock(side_effect=AssertionError("No AI dispatch permitted"))
+        before = self.adapter.live.engine.status()
+        self.adapter.receive(self.message(301, 20, 98, "!mod selftest"))
+        await self.drain()
+        self.assertEqual(self.adapter.live.engine.status(), before)
+        self.channel.send.assert_awaited_once()
+        args, kwargs = self.channel.send.call_args
+        self.assertIn("9/9 passed", args[0])
+        self.assertIn("Live Discord events, permissions and actual restart: not tested", args[0])
+        self.assertEqual(kwargs["allowed_mentions"].to_dict()["parse"], [])
+        self.adapter.handle_message.assert_not_called()
+
     async def test_edit_fetch_failure_records_gap_and_discards_pending_window(self):
         self.adapter.receive(self.message())
         await self.drain()

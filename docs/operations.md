@@ -54,6 +54,7 @@ The fixtures are local test inputs, **not registered Discord slash commands**. I
 | `incident` | Inspect the incident ID in `arguments`. |
 | `logs` | Use `arguments: ["on"]` or `["off"]` to persist optional log-payload generation; enabling requires a configured log channel, and disabling cancels pending log payloads. No Discord posting occurs. |
 | `explain` | Inspect the incident ID in `arguments` and return saved reasons/evidence without changing live counters. |
+| `selftest` | Run nine fixed synthetic checks in separate in-memory stores; no arguments, live evidence changes, provider calls, or public actions. See [coverage and deployment](selftest.md). |
 | `approve` | Unsupported; no enforcement path exists. |
 
 For an incident request, set `"command": "explain"` and `"arguments": ["INCIDENT_ID_FROM_OUTPUT"]`. Command authorization requires the configured guild, command channel, and an allowed user or role together. An operator posting in a public/monitored channel cannot administer the harness through that channel.
