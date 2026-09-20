@@ -1,12 +1,12 @@
 # JEV batch evaluation
 
-The standalone runner evaluates synthetic examples with the real JEV API and prints one narrow summary. The original **context-v1** baseline contains ten examples. The owner has completed the baseline: ten valid responses, nine matches and one mixed-purpose review case. The [recorded results](#baseline-results--september-20-2026) below supersede the earlier pending-run status. No repeat run is needed.
+The standalone runner evaluates synthetic examples with the real JEV API and prints one narrow summary. The original **context-v1** baseline contains ten examples. The owner has completed the baseline: ten valid responses, nine matches and one mixed-purpose review case. The [recorded results](#baseline-results--september-20-2026) below supersede the earlier pending-run status. The five-case precedence-v2 comparison is also complete: five valid responses, four matches and one ambiguous-fragment review case. See the [candidate results](#precedence-v2-results--september-20-2026). Neither run needs repeating now.
 
 It reuses the plugin's incident evidence builder, pinned model, transport and typed-response validator. The explicit suite selects either the original rubric or the candidate described below. Each example becomes a disposable three-channel repeat incident in memory. Expected labels and test names never enter the provider request. No real Discord messages are read, sent or changed.
 
-## Next: focused precedence-v2 comparison
+## Focused precedence-v2 comparison
 
-The selected clarification is implemented as an **experimental batch rubric**, with five fixed examples. It has not been promoted to the live Discord classifier. The existing 0.3.3 plugin continues using context-v1 in shadow mode. No plugin update, restart, new key or Discord posting is required for this comparison.
+The selected clarification is implemented as an **experimental batch rubric**, with five fixed examples. The owner completed the run and supplied [four matches plus one review case](#precedence-v2-results--september-20-2026). It has not been promoted to the live Discord classifier. The existing 0.3.3 plugin continues using context-v1 in shadow mode. No plugin update, restart, new key or Discord posting is required for this comparison.
 
 The candidate gives an explicit offer endorsed by the author priority as **promotion**, even inside an announcement or warning. Quoted, described or negated sales language without endorsement does not count as a promotion; a warning remains **quoted_warning**. Community notices without an endorsed offer remain **announcement**, and genuinely indeterminate fragments remain **unclear**. These labels describe apparent purpose, not permission or a moderation verdict.
 
@@ -20,7 +20,7 @@ The candidate gives an explicit offer endorsed by the author priority as **promo
 
 The first three reuse baseline text. The mixed example intentionally has a different expected label under the revised definition; the original context-v1 expectation remains unclear and its 9/10 score remains intact. The final two are new contrast cases. This is a targeted check of the revised definition using historical reference cases, not a paid rerun of both rubrics or evidence of higher general accuracy.
 
-From the existing hermes terminal, run the new staged helper:
+The completed candidate run used this command, retained for reference and resuming incomplete runs:
 
 ```bash
 python3 \
@@ -28,9 +28,9 @@ python3 \
   run --suite precedence-v2
 ```
 
-Its default run name is precedence-v2. It makes at most **five new attempts**, with a maximum conservative reservation of **$0.013765**, using the same profile key, model and shared caps. It normally takes about 30 seconds with the current six-second interval, subject to live-worker activity. Results appear in one narrow summary; compare expected/actual labels and retain disagreements for review. Real candidate results remain pending the owner's run.
+Its default run name is precedence-v2. It makes at most **five new attempts**, with a maximum conservative reservation of **$0.013765**, using the same profile key, model and shared caps. It normally takes about 30 seconds with the current six-second interval, subject to live-worker activity. Results appear in one narrow summary; compare expected/actual labels and retain disagreements for review. The owner's completed results are recorded below; no additional run is needed now.
 
-At the reported 13-call checkpoint, five more reservations fit within the current $0.05 daily cap; additional live calls may leave less room. If the daily budget stops a partial run, use the **same command and run name** after the next UTC day begins. Saved attempts are reused, and only cases that have never been attempted can spend again. A lifetime cap or billing guard requires separate review; waiting for midnight does not clear those limits.
+Shared accounting now reports 18 calls. If all 18 were made on the same UTC day, their $0.049554 reservation leaves $0.000446 under the $0.05 daily cap, less than the $0.002753 required for another attempt. The supplied total alone does not establish the current daily counter. If the daily budget stops a partial run, use the **same command and run name** after the next UTC day begins. Saved attempts are reused, and only cases that have never been attempted can spend again. A lifetime cap or billing guard requires separate review; waiting for midnight does not clear those limits.
 
 To see the exact candidate wording and examples without profile access or calls, replace run with preview. To see saved results without a key read or new calls:
 
@@ -42,7 +42,7 @@ python3 \
 
 Add --json for complete hashes, recorded expectations and timing. Candidate rubric hash: `73adf752254deaf5cbfc57b33a7411d0680cefde8a8c50106a36cbc127a7e626`. The summary identifies the selected suite. Every attempt is bound to its exact request hash, suite, rubric hash and expected label. Saved results whose provenance does not match are unavailable and are not retried automatically. The original ten payload hashes are unchanged, so the new helper can also inspect context-v1 history with --suite context-v1.
 
-Review the new output before promoting this rubric to the incident worker. No live policy or saved incident label is changed by this comparison. Enforcement stays disabled.
+The completed review retains the ambiguous fragment as an unresolved case; the candidate has not been promoted to the incident worker. No live policy or saved incident label is changed by this comparison. Enforcement stays disabled.
 
 ## Completed baseline: commands for reference
 
@@ -123,7 +123,7 @@ The key is read only from the owned, private liberdus-mod/.env file, without env
 
 This is live JEV classification of synthetic incident inputs. It does not verify Discord message delivery, permissions, edits/deletions, reconnects, human-account authorization or general classification accuracy. The existing self-test and previously recorded live Discord tests cover other layers. A dedicated Discord test bot remains separate future work; all current bot exclusions are unchanged.
 
-The developer account cannot access the real hermes profile. Development used synthetic profiles, mock provider replies and blocked external network edges. The owner subsequently supplied the completed baseline below. This confirms real-provider execution for these examples; other live Discord and general accuracy claims remain outside this batch.
+The developer account cannot access the real hermes profile. Development used synthetic profiles, mock provider replies and blocked external network edges. The owner subsequently supplied the completed baseline and candidate runs below. This confirms real-provider execution for these examples; other live Discord and general accuracy claims remain outside this batch.
 
 ## Build and validation
 
@@ -159,8 +159,31 @@ Mean recorded latency is 317.4 ms, median 299.5 ms, range 275–472 ms. The summ
 
 **Review case:** the input combines a community maintenance notice with an explicit request to buy an unrelated subscription using a referral code. The current rubric describes promotion as promoting an offer and unclear as including mixed purpose, so both criteria apply. Promotion at displayed confidence 0.61 is a plausible reading, but it disagrees with the initial expected label. Preserve this as REVIEW and keep the baseline at 9/10; neither the original expectation nor the context-v1 rubric has been changed.
 
-**Recommendation made at the baseline checkpoint:** clarify precedence for mixed content. An explicit endorsed sales pitch could take the promotion label even when packaged with an announcement; quoted or negated sales language in warnings should remain quoted_warning. Genuinely ambiguous intent can remain unclear. The owner subsequently selected this distinction; the precedence-v2 batch candidate above is now implemented and awaits a real-provider comparison before any live adoption. Do not relabel the baseline merely to make every case match, and do not use the displayed confidence as a calibrated decision threshold.
+**Recommendation made at the baseline checkpoint:** clarify precedence for mixed content. An explicit endorsed sales pitch could take the promotion label even when packaged with an announcement; quoted or negated sales language in warnings should remain quoted_warning. Genuinely ambiguous intent can remain unclear. The owner subsequently selected this distinction; the precedence-v2 candidate above has now completed its real-provider comparison, with the unresolved fragment documented below and no live adoption. Do not relabel the baseline merely to make every case match, and do not use the displayed confidence as a calibrated decision threshold.
 
 The adversarial example returned unclear rather than the announcement requested inside the text; the multilingual examples also matched in this run. Those observations do not establish general prompt-injection resistance, language coverage or a 90 percent production accuracy rate. Keep JEV advisory in shadow mode and enforcement disabled. Automatic report annotations and Discord test-bot automation remain future changes.
 
 This is operator-supplied live-provider evidence. The developer updated documentation only; no key/profile access, provider call, Discord message or gateway restart accompanied this checkpoint.
+
+
+## Precedence-v2 results — September 20, 2026
+
+The owner supplied the terminal summary for suite and run name precedence-v2. All five cases returned `ok`; four matched their expected labels. These are rounded scores and recorded request latencies from the pasted summary, not raw provider traces.
+
+| Example | Expected | Actual | Displayed score | Recorded latency |
+| --- | --- | --- | --- | --- |
+| Announcement + offer | promotion | promotion | 1.00 | 376 ms |
+| Community event | announcement | announcement | 1.00 | 285 ms |
+| Quoted scam warning | quoted_warning | quoted_warning | 1.00 | 268 ms |
+| Warning + endorsed offer | promotion | promotion | 1.00 | 269 ms |
+| Unclear forwarded fragment | unclear | promotion | 0.65 | 286 ms |
+
+Mean recorded latency is **296.8 ms**, median 285 ms, range 268–376 ms. The summary reports five new attempts, **$0.013765 reserved**, a **$0.000144 known token estimate**, and **18 shared total calls**, consistent with the previous 13 plus these five. Reservations are local accounting, and the token estimate is not a provider invoice. If all 18 calls occurred in one UTC day, the existing spending cap prevents another reservation that day; the summary does not expose the current daily counter. Code-rule moderation operates independently of the JEV allowance.
+
+**Remaining review case:** the exact input was `Friday maintenance. Premium signals. Referral code. Passing this along as received.` The candidate asks for explicit endorsement or an invitation before selecting promotion; this fragment names commercial terms without clearly expressing either. The returned promotion label at displayed score 0.65 disagrees with the intended unclear label. It may suggest commercial terms are carrying too much weight in this example, but the response does not reveal the model's reasoning. Preserve REVIEW and the 4/5 result; do not change the expectation to count this as a pass.
+
+**What the comparison establishes:** the two endorsed-offer examples, ordinary announcement and quoted warning matched the selected definition in this run. The original rubric already returned promotion for the mixed announcement, so that new MATCH reflects the explicitly revised expectation, not a demonstrated correction of its previous predicted label. The fragment and warning-with-offer examples were absent from the original ten-case baseline. Different cases and definitions mean 9/10 versus 4/5 is not a measure of improvement or regression. The displayed scores are not calibrated correctness probabilities.
+
+**Recommendation, not a runtime change:** keep precedence-v2 as an experimental candidate while reviewing the ambiguous boundary. Before adopting it, a useful next refinement would state that isolated commercial terms and forwarding alone are insufficient evidence of an endorsed offer, then check additional previously unseen fragments alongside clear offers and warnings. Do not introduce a confidence threshold from these few examples or tune only to this one fragment. The current live classifier remains context-v1 in shadow mode; enforcement stays disabled. No additional paid run, installation or restart is needed now.
+
+The pending candidate result in the preceding implementation checkpoint is superseded. This update records owner-supplied evidence only: no source code, expected label, rubric, profile, key, spending cap or runtime was changed, and no provider call or Discord action was made. The original context-v1 baseline remains 9/10.
