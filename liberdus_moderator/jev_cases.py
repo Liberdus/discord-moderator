@@ -2,14 +2,17 @@
 
 from dataclasses import dataclass
 import hashlib
+import json
 
-from .classifier import ShadowClassifier
+from .classifier import RUBRIC, ShadowClassifier, encoded
 from .config import Config, ClassifierSettings, StorageSettings
 from .engine import Engine
 from .models import MessageEvent
+from .jev_rubrics import PRECEDENCE_RUBRIC
 from .storage import Store
 
 SUITE = "context-v1"
+PRECEDENCE_SUITE = "precedence-v2"
 
 
 @dataclass(frozen=True)
@@ -44,8 +47,47 @@ CASES = (
 )
 
 
-def request(case, settings):
-    """Build a real shadow request from a disposable three-channel incident."""
+# The original suite and expected labels above are historical and remain unchanged.
+PRECEDENCE_CASES = (
+    Case("mixed", "Announcement + offer", "promotion", CASES[4].text),
+    CASES[0],
+    CASES[2],
+    Case("warning_offer", "Warning + endorsed offer", "promotion",
+         'Beware of messages saying "connect your wallet to claim a reward". They are phishing attempts. '
+         'Also, buy my premium signals subscription using my referral code.'),
+    Case("fragment", "Unclear forwarded fragment", "unclear",
+         "Friday maintenance. Premium signals. Referral code. Passing this along as received."),
+)
+
+
+@dataclass(frozen=True)
+class Suite:
+    name: str
+    default_run_id: str
+    cases: tuple
+    rubric: dict
+
+    @property
+    def rubric_hash(self):
+        return hashlib.sha256(encoded(self.rubric)).hexdigest()
+
+
+SUITES = {
+    SUITE: Suite(SUITE, "baseline", CASES, RUBRIC),
+    PRECEDENCE_SUITE: Suite(PRECEDENCE_SUITE, PRECEDENCE_SUITE, PRECEDENCE_CASES, PRECEDENCE_RUBRIC),
+}
+
+
+def get_suite(name):
+    try:
+        return SUITES[name]
+    except KeyError:
+        raise ValueError("Expected a supported batch suite") from None
+
+
+def request(case, settings, *, suite=SUITE):
+    """Reuse incident evidence construction; an explicit suite can select a candidate rubric."""
+    selected = get_suite(suite)
     config = Config("1", "99", ("10", "11", "12"), ("20",), ("98",),
                     schema_version=2, ai_enabled=True, classifier=settings,
                     storage=StorageSettings(database_path=":memory:"))
@@ -60,11 +102,19 @@ def request(case, settings):
         job = worker.snapshot(incidents[0]["id"])
         if job is None:
             raise ValueError("Synthetic request exceeds configured evidence or input limits")
-        return job.payload
+        if suite == SUITE:
+            return job.payload
+        # Candidate changes only the rubric, after the production evidence checks.
+        data = json.loads(job.payload)
+        data["questions"]["context"] = selected.rubric
+        payload = encoded(data)
+        if len(payload) > settings.max_request_bytes:
+            raise ValueError("Synthetic request exceeds configured evidence or input limits")
+        return payload
 
 
-def requests(settings=None):
+def requests(settings=None, *, suite=SUITE):
     settings = settings or ClassifierSettings(mode="shadow", max_daily_calls=10, max_total_calls=10,
                                               daily_budget_microusd=27530, total_budget_microusd=27530)
     return [(case, payload, hashlib.sha256(payload).hexdigest())
-            for case in CASES for payload in (request(case, settings),)]
+            for case in get_suite(suite).cases for payload in (request(case, settings, suite=suite),)]

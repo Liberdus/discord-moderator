@@ -16,7 +16,8 @@ from liberdus_moderator.configure_jev import policy_text
 from liberdus_moderator.engine import Engine
 from liberdus_moderator.jev import ProviderError
 from liberdus_moderator.jev_batch import Ledger, batch_lock, run_batch, format_report, load_policy, main, run_name, TABLE
-from liberdus_moderator.jev_cases import CASES, request, requests
+from liberdus_moderator.jev_cases import (CASES, PRECEDENCE_CASES, PRECEDENCE_SUITE, SUITE,
+                                         get_suite, request, requests)
 from liberdus_moderator.models import MessageEvent
 from liberdus_moderator.storage import Store
 
@@ -82,6 +83,107 @@ class BatchTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("author_id", data["state"])
             changed = replace(case, expected="other" if case.expected != "other" else "promotion")
             self.assertEqual(request(changed, self.settings), payload)
+
+    async def test_candidate_preserves_baseline_identity_and_evidence_without_expected_label_leakage(self):
+        self.assertEqual(get_suite(SUITE).rubric_hash,
+                         "eb0a90b73588716140dd118bb73afdd12d78159e3c552e7a47102d601ba2452f")
+        self.assertEqual(self.prepared[4][2],
+                         "86138cb4dc48043280dacd5bddfa6d7adbe9a4decc81f53654d762522da1db0f")
+        self.assertEqual(CASES[4].expected, "unclear")
+        candidate = requests(self.settings, suite=PRECEDENCE_SUITE)
+        self.assertEqual(len(candidate), 5)
+        self.assertNotEqual(get_suite(PRECEDENCE_SUITE).rubric_hash, get_suite(SUITE).rubric_hash)
+        self.assertEqual(candidate[0][0].text, CASES[4].text)
+        self.assertEqual(candidate[0][0].expected, "promotion")
+        for case, payload, _ in candidate:
+            before = json.loads(request(case, self.settings))
+            after = json.loads(payload)
+            self.assertNotEqual(before.pop("questions"), after.pop("questions"))
+            self.assertEqual(before, after)
+            changed = replace(case, expected="other")
+            self.assertEqual(payload, request(changed, self.settings, suite=PRECEDENCE_SUITE))
+        self.assertEqual(set(get_suite(PRECEDENCE_SUITE).rubric["criteria"]), set(RUBRIC["criteria"]))
+
+    async def test_candidate_size_limit_applies_after_rubric_substitution(self):
+        case = replace(PRECEDENCE_CASES[0], text=PRECEDENCE_CASES[0].text + " extra" * 70)
+        settings = replace(self.settings, max_request_bytes=2048)
+        self.assertLessEqual(len(request(case, settings)), 2048)
+        with self.assertRaisesRegex(ValueError, "input limits"):
+            request(case, settings, suite=PRECEDENCE_SUITE)
+
+    async def test_candidate_result_is_separate_and_never_rescores_or_reuses_baseline(self):
+        self.provider.side_effect = [response(case.expected if case.name != "mixed" else "promotion")
+                                     for case, _, _ in self.prepared]
+        baseline = await self.run_cases()
+        self.assertEqual(baseline["matched"], 9)
+        saved = [tuple(row) for row in self.ledger.db.execute(f"SELECT * FROM {TABLE}")]
+        before = self.live_state()
+        candidate = requests(self.settings, suite=PRECEDENCE_SUITE)
+        self.provider.side_effect = [response(case.expected) for case, _, _ in candidate]
+        # Even an explicitly reused run name cannot confuse two different rubric hashes.
+        result = await self.run_cases(candidate, suite=PRECEDENCE_SUITE)
+        self.assertEqual((result["matched"], result["successful"], result["new_attempts"]), (5, 5, 5))
+        self.assertEqual(result["reserved_microusd"], 13765)
+        self.assertEqual(result["suite"], PRECEDENCE_SUITE)
+        self.assertEqual(result["rubric_hash"], get_suite(PRECEDENCE_SUITE).rubric_hash)
+        after = self.ledger.report("baseline", self.prepared)
+        self.assertEqual(after["matched"], 9)
+        self.assertEqual(after["records"][4]["expected_at_evaluation"], "unclear")
+        self.assertEqual(saved, [tuple(row) for row in self.ledger.db.execute(
+            f"SELECT * FROM {TABLE} WHERE suite=?", (SUITE,))])
+        again = await self.run_cases(candidate, suite=PRECEDENCE_SUITE)
+        self.assertEqual(again["new_attempts"], 0)
+        self.assertEqual(self.provider.await_count, 15)
+        self.assertEqual(self.live_state(), before)
+        self.assertEqual(self.live.get_setting("classifier_state"), "ready")
+        self.assertEqual(json.loads(self.worker.snapshot(self.incident).payload)["questions"]["context"], RUBRIC)
+        self.assertLessEqual(max(map(len, format_report(result).splitlines())), 32)
+
+    async def test_candidate_stops_at_shared_daily_cap_and_resumes_only_unattempted_cases(self):
+        for name, value in (("classifier_budget_day", 0), ("classifier_daily_calls", 16),
+                            ("classifier_total_calls", 16),
+                            ("classifier_daily_reserved_microusd", 16 * RESERVED_MICROUSD),
+                            ("classifier_total_reserved_microusd", 16 * RESERVED_MICROUSD)):
+            self.live.set_setting(name, value)
+        candidate = requests(self.settings, suite=PRECEDENCE_SUITE)
+        self.provider.side_effect = [response(case.expected) for case, _, _ in candidate]
+        result = await self.run_cases(candidate, suite=PRECEDENCE_SUITE, run_id=PRECEDENCE_SUITE)
+        self.assertEqual(result["stopped"], "budget_exhausted")
+        self.assertEqual(result["new_attempts"], 2)
+        self.assertEqual(result["shared_total_calls"], 18)
+        self.assertEqual(result["shared_total_reserved_microusd"], 49554)
+        self.now = 86401.0
+        resumed = await self.run_cases(candidate, suite=PRECEDENCE_SUITE, run_id=PRECEDENCE_SUITE)
+        self.assertEqual((resumed["new_attempts"], resumed["matched"], resumed["successful"]), (3, 5, 5))
+        self.assertEqual(self.provider.await_count, 5)
+        self.assertEqual(resumed["reserved_microusd"], 13765)
+        self.assertEqual(self.live.get_setting("classifier_daily_calls"), 3)
+
+    async def test_mismatched_suite_requests_fail_before_database_write_or_provider(self):
+        before = list(self.live.db.iterdump())
+        candidate = requests(self.settings, suite=PRECEDENCE_SUITE)
+        for prepared, suite in ((candidate, SUITE), (self.prepared, PRECEDENCE_SUITE)):
+            with self.subTest(suite=suite), self.assertRaisesRegex(ValueError, "matching the selected suite"):
+                await self.run_cases(prepared, suite=suite)
+        self.assertEqual(before, list(self.live.db.iterdump()))
+        self.provider.assert_not_awaited()
+
+    async def test_saved_candidate_provenance_mismatch_is_unavailable_without_retry(self):
+        candidate = requests(self.settings, suite=PRECEDENCE_SUITE)[:1]
+        self.provider.return_value = response("promotion")
+        await self.run_cases(candidate, suite=PRECEDENCE_SUITE)
+        for field, bad, correct in (("suite", SUITE, PRECEDENCE_SUITE),
+                                    ("rubric_hash", get_suite(SUITE).rubric_hash,
+                                     get_suite(PRECEDENCE_SUITE).rubric_hash),
+                                    ("expected", "unclear", "promotion")):
+            with self.subTest(field=field):
+                self.ledger.db.execute(f"UPDATE {TABLE} SET {field}=?", (bad,))
+                result = await self.run_cases(candidate, suite=PRECEDENCE_SUITE)
+                self.assertEqual(result["records"][0]["outcome"], "unavailable")
+                self.assertIsNone(result["records"][0]["actual"])
+                self.assertEqual(result["new_attempts"], 0)
+                self.ledger.db.execute(f"UPDATE {TABLE} SET {field}=?", (correct,))
+        self.provider.assert_awaited_once()
 
     async def test_success_mismatch_and_shared_accounting_preserve_live_state(self):
         before = self.live_state()
@@ -300,6 +402,39 @@ class BatchTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(await asyncio.to_thread(main), 1)
                 self.assertEqual(json.loads(output.getvalue())["new_attempts"], 0)
             self.assertEqual(provider.await_count, 10)
+
+    async def test_candidate_cli_defaults_to_separate_run_and_results_work_after_switching_off(self):
+        from liberdus_moderator import jev_batch as module
+        virtualenv = self.profile.parent.parent / "hermes-agent/venv"
+        virtualenv.joinpath("bin").mkdir(parents=True)
+        virtualenv.joinpath("bin/python").touch()
+        original = module.run_batch
+        async def fast_run(ledger, config, prepared, evaluator, **kwargs):
+            return await original(ledger, config, prepared, evaluator, clock=lambda: self.now,
+                                  monotonic=lambda: self.monotonic, sleep=self.sleep, **kwargs)
+        provider = AsyncMock(side_effect=[response(case.expected) for case in PRECEDENCE_CASES])
+        with patch("pathlib.Path.home", return_value=Path(self.temporary.name)), \
+             patch("sys.prefix", str(virtualenv)), patch.object(module, "run_batch", side_effect=fast_run), \
+             patch.object(module, "evaluate", new=provider):
+            output = io.StringIO()
+            with patch("sys.argv", ["batch.pyz", "run", "--suite", PRECEDENCE_SUITE, "--json"]), \
+                 patch.object(module, "profile_key", return_value="synthetic-key"), \
+                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(await asyncio.to_thread(main), 0)
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["run_id"], PRECEDENCE_SUITE)
+            self.assertEqual(result["new_attempts"], 5)
+            off = replace(self.config, ai_enabled=False, classifier=ClassifierSettings())
+            self.policy.write_text(policy_text(off))
+            output = io.StringIO()
+            before = list(self.live.db.iterdump())
+            with patch("sys.argv", ["batch.pyz", "results", "--suite", PRECEDENCE_SUITE, "--json"]), \
+                 patch.object(module, "profile_key", side_effect=AssertionError("No key access for results")), \
+                 contextlib.redirect_stdout(output):
+                self.assertEqual(await asyncio.to_thread(main), 0)
+            self.assertEqual(json.loads(output.getvalue())["new_attempts"], 0)
+            self.assertEqual(before, list(self.live.db.iterdump()))
+            self.assertEqual(provider.await_count, 5)
 
 
 if __name__ == "__main__":

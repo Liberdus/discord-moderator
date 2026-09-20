@@ -14,11 +14,11 @@ import sys
 import textwrap
 import time
 
-from .classifier import MODEL, RUBRIC_HASH, RESERVED_INPUT_TOKENS, RESERVED_MICROUSD, encoded, validate_response
+from .classifier import MODEL, RESERVED_INPUT_TOKENS, RESERVED_MICROUSD, encoded, validate_response
 from .config import Config
 from .configure_jev import regular_owned
 from .jev import ProviderError, evaluate
-from .jev_cases import CASES, SUITE, requests
+from .jev_cases import SUITE, SUITES, get_suite, requests
 from .storage import Store
 
 TABLE = "jev_batch_attempts_v1"
@@ -109,7 +109,7 @@ class Ledger(Store):
         if not self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (TABLE,)).fetchone():
             return None
         return self.db.execute(
-            f"SELECT run_id,request_hash,expected,policy_hash,model,rubric_hash,started_at,finished_at,outcome,latency_ms,"
+            f"SELECT run_id,request_hash,suite,case_name,expected,policy_hash,model,rubric_hash,started_at,finished_at,outcome,latency_ms,"
             f"CASE WHEN length(result_json)<=8192 THEN result_json ELSE NULL END AS result_json "
             f"FROM {TABLE} WHERE run_id=? AND request_hash=?", (run_id, digest)).fetchone()
 
@@ -132,7 +132,8 @@ class Ledger(Store):
             return "unsupported_classifier_schema"
         return None
 
-    def reserve(self, run_id, case, digest, config, now):
+    def reserve(self, run_id, case, digest, config, now, *, suite=SUITE):
+        selected = get_suite(suite)
         with self.transaction():
             if self.row(run_id, digest) is not None:
                 return "cached"
@@ -157,7 +158,7 @@ class Ledger(Store):
                     or total_reserved + RESERVED_MICROUSD > settings.total_budget_microusd):
                 return "budget_exhausted"
             self.db.execute(f"INSERT INTO {TABLE} VALUES(?,?,?,?,?,?,?,?,?,NULL,'running',NULL,NULL)",
-                            (run_id, digest, SUITE, case.name, case.expected, config.policy_hash, MODEL, RUBRIC_HASH, now))
+                            (run_id, digest, suite, case.name, case.expected, config.policy_hash, MODEL, selected.rubric_hash, now))
             for name, value in (
                 ("classifier_budget_day", day), ("classifier_daily_calls", daily + 1),
                 ("classifier_daily_reserved_microusd", daily_reserved + RESERVED_MICROUSD),
@@ -177,7 +178,8 @@ class Ledger(Store):
             if outcome == "usage_exceeds_reservation":
                 self.set_setting("classifier_billing_guard", True)
 
-    def report(self, run_id, prepared, *, new_attempts=0, stopped=None):
+    def report(self, run_id, prepared, *, new_attempts=0, stopped=None, suite=SUITE):
+        selected = get_suite(suite)
         records = []
         for case, payload, digest in prepared:
             row = self.row(run_id, digest)
@@ -187,9 +189,14 @@ class Ledger(Store):
                 item.update(expected_at_evaluation=row["expected"], policy_hash=row["policy_hash"],
                             started_at=row["started_at"], finished_at=row["finished_at"])
                 item["outcome"] = row["outcome"] if row["outcome"] in ERRORS | {"ok", "running"} else "unavailable"
+                provenance_matches = (row["model"] == MODEL and row["rubric_hash"] == selected.rubric_hash
+                                      and row["suite"] == suite and row["case_name"] == case.name
+                                      and row["expected"] == case.expected)
+                if not provenance_matches:
+                    item["outcome"] = "unavailable"
                 if type(row["latency_ms"]) is int and 0 <= row["latency_ms"] <= 86400000:
                     item["latency_ms"] = row["latency_ms"]
-                if row["outcome"] in {"stale", "usage_exceeds_reservation"}:
+                if item["outcome"] in {"stale", "usage_exceeds_reservation"}:
                     try:
                         usage = json.loads(row["result_json"])
                         if all(type(usage[key]) is int and 0 <= usage[key] <= 1000000
@@ -198,15 +205,13 @@ class Ledger(Store):
                                         estimated_microusd=(usage["input_tokens"] * 42 + 999) // 1000)
                     except (TypeError, ValueError, KeyError, RecursionError):
                         pass
-                if row["outcome"] == "ok":
+                if item["outcome"] == "ok":
                     try:
                         result = json.loads(row["result_json"])
                         valid = validate_response({"model": result["model"], "answers": {"context": {
                             "type": "choice", "choice": result["choice"], "confidence": result["confidence"],
                             "probabilities": result["probabilities"]}}, "usage": {
                             "input_tokens": result["input_tokens"], "output_tokens": result["output_tokens"]}})
-                        if row["model"] != MODEL or row["rubric_hash"] != RUBRIC_HASH:
-                            raise ValueError
                         item.update(actual=valid["choice"], match=valid["choice"] == case.expected,
                                     confidence=valid["confidence"], input_tokens=valid["input_tokens"],
                                     output_tokens=valid["output_tokens"],
@@ -215,7 +220,7 @@ class Ledger(Store):
                         item["outcome"] = "unavailable"
             records.append(item)
         attempts = sum(record["outcome"] != "not_run" for record in records)
-        return {"suite": SUITE, "run_id": run_id, "model": MODEL, "rubric_hash": RUBRIC_HASH,
+        return {"suite": suite, "run_id": run_id, "model": MODEL, "rubric_hash": selected.rubric_hash,
                 "records": records, "matched": sum(record["match"] is True for record in records),
                 "successful": sum(record["outcome"] == "ok" for record in records),
                 "attempted": attempts, "new_attempts": new_attempts, "stopped": stopped,
@@ -225,9 +230,14 @@ class Ledger(Store):
                 "shared_total_reserved_microusd": self.number("classifier_total_reserved_microusd")}
 
 
-async def run_batch(ledger, config, prepared, evaluator, *, run_id="baseline", current=lambda: True,
+async def run_batch(ledger, config, prepared, evaluator, *, run_id="baseline", suite=SUITE, current=lambda: True,
                     clock=time.time, monotonic=time.monotonic, sleep=asyncio.sleep, progress=lambda text: None):
     run_name(run_id)
+    # Bind every attempt to the selected fixed suite before any state write or I/O.
+    expected = {item[0].name: item for item in requests(
+        config.classifier if config.ai_enabled else None, suite=suite)}
+    if any(expected.get(item[0].name) != item for item in prepared):
+        raise ValueError("Expected requests matching the selected suite")
     ledger.initialize_batch()
     deadline = monotonic() + MAX_RUN_SECONDS
     attempts, stopped = 0, None
@@ -243,7 +253,7 @@ async def run_batch(ledger, config, prepared, evaluator, *, run_id="baseline", c
             if not current():
                 admission = "policy_changed"
                 break
-            admission = ledger.reserve(run_id, case, digest, config, clock())
+            admission = ledger.reserve(run_id, case, digest, config, clock(), suite=suite)
             if admission != "wait":
                 break
             await sleep(min(1.0, max(0.0, deadline - monotonic())))
@@ -282,11 +292,11 @@ async def run_batch(ledger, config, prepared, evaluator, *, run_id="baseline", c
         if outcome != "ok":
             stopped = outcome
             break
-    return ledger.report(run_id, prepared, new_attempts=attempts, stopped=stopped)
+    return ledger.report(run_id, prepared, new_attempts=attempts, stopped=stopped, suite=suite)
 
 
 def format_report(report):
-    lines = ["JEV BATCH - " + report["run_id"], "-" * 32]
+    lines = ["JEV BATCH - " + report["run_id"], "Suite: " + report["suite"], "-" * 32]
     for index, item in enumerate(report["records"], 1):
         verdict = ("MATCH" if item["match"] else "REVIEW") if item["outcome"] == "ok" else item["outcome"].upper()
         lines += [f"{index:02d} {item['title']} [{verdict}]",
@@ -309,25 +319,29 @@ def format_report(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("preview", "run", "results"), nargs="?", default="preview")
-    parser.add_argument("--run-id", default="baseline", help="Same name reuses attempts; a new name buys fresh evaluations")
+    parser.add_argument("--suite", choices=tuple(SUITES), default=SUITE,
+                        help="context-v1 preserves the baseline; precedence-v2 tests the candidate rubric")
+    parser.add_argument("--run-id", help="Defaults to the selected suite's run; a new name buys fresh evaluations")
     parser.add_argument("--json", action="store_true", help="Print structured results")
     args = parser.parse_args()
     try:
-        run_name(args.run_id)
+        selected = get_suite(args.suite)
+        args.run_id = run_name(selected.default_run_id if args.run_id is None else args.run_id)
         if args.operation == "preview":
-            data = {"suite": SUITE, "run_id": args.run_id, "model": MODEL, "rubric_hash": RUBRIC_HASH,
-                    "cases": [{"case": c.name, "expected": c.expected, "text": c.text} for c in CASES],
-                    "maximum_attempts": len(CASES), "maximum_reserved_microusd": len(CASES) * RESERVED_MICROUSD,
+            data = {"suite": args.suite, "run_id": args.run_id, "model": MODEL, "rubric_hash": selected.rubric_hash,
+                    "rubric": selected.rubric,
+                    "cases": [{"case": c.name, "expected": c.expected, "text": c.text} for c in selected.cases],
+                    "maximum_attempts": len(selected.cases), "maximum_reserved_microusd": len(selected.cases) * RESERVED_MICROUSD,
                     "provider_called": False}
             print(json.dumps(data, indent=2, ensure_ascii=False))
             return 0
         profile = Path.home() / ".hermes/profiles/liberdus-mod"
         config = load_policy(profile)
-        prepared = requests(config.classifier if args.operation == "run" and config.ai_enabled else None)
+        prepared = requests(config.classifier if args.operation == "run" and config.ai_enabled else None, suite=args.suite)
         database = profile / "state/moderation.sqlite3"
         if args.operation == "results":
             with Ledger(database) as ledger:
-                report = ledger.report(args.run_id, prepared)
+                report = ledger.report(args.run_id, prepared, suite=args.suite)
         else:
             python = Path.home() / ".hermes/hermes-agent/venv/bin/python"
             if not python.is_file():
@@ -351,12 +365,12 @@ def main():
                     except (OSError, ValueError):
                         return False
                 report = asyncio.run(run_batch(
-                    ledger, config, prepared, provider, run_id=args.run_id, current=current,
+                    ledger, config, prepared, provider, run_id=args.run_id, suite=args.suite, current=current,
                     progress=lambda text: print(text, file=sys.stderr, flush=True)))
         print(json.dumps(report, indent=2) if args.json else format_report(report))
-        if report["successful"] != len(CASES):
+        if report["successful"] != len(selected.cases):
             return 2
-        return 0 if report["matched"] == len(CASES) else 1
+        return 0 if report["matched"] == len(selected.cases) else 1
     except KeyboardInterrupt:
         print("Batch interrupted. Saved attempts are not retried. Use results to inspect them.", file=sys.stderr)
         return 130

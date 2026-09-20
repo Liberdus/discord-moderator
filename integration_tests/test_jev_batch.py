@@ -66,17 +66,21 @@ def audit(event, args):
         raise RuntimeError('Network forbidden')
 sys.addaudithook(audit)
 bundle = sys.argv[1]
-sys.argv = [bundle, 'preview']
+sys.argv = [bundle, 'preview', *sys.argv[2:]]
 with patch('pathlib.Path.home', side_effect=RuntimeError('Profile access forbidden')):
     runpy.run_path(bundle, run_name='__main__')
 """
-        result = subprocess.run([sys.executable, "-B", "-c", runner, str(bundle)],
-                                cwd=self.root, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        preview = json.loads(result.stdout)
-        self.assertEqual(preview["maximum_attempts"], 10)
-        self.assertEqual(preview["maximum_reserved_microusd"], 27530)
-        self.assertFalse(preview["provider_called"])
+        for options, count, name in (([], 10, "baseline"), (["--suite", "precedence-v2"], 5, "precedence-v2")):
+            with self.subTest(options=options):
+                result = subprocess.run([sys.executable, "-B", "-c", runner, str(bundle), *options],
+                                        cwd=self.root, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                preview = json.loads(result.stdout)
+                self.assertEqual(preview["maximum_attempts"], count)
+                self.assertEqual(preview["maximum_reserved_microusd"], count * 2753)
+                self.assertEqual(preview["run_id"], name)
+                self.assertFalse(preview["provider_called"])
+                self.assertEqual(preview["rubric"]["type"], "choice")
 
 
 if __name__ == "__main__":
