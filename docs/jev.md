@@ -1,6 +1,6 @@
 # Optional JEV shadow evaluation
 
-**Current decision — September 20, 2026: deferred.** The operator does not yet have TypeSafe access and chose to continue the code-only pilot. Keep `ai_enabled = false` and `classifier.mode = "off"`; the latest supplied Discord status confirms `JEV: off / off` and zero AI attempts. The setup/activation instructions below are retained for a later explicit resumption, not the next pilot step. No TypeSafe account, key or payment is needed for the current deterministic moderation tests. Continue with the [remaining live pilot checks](live-pilot.md#remaining-code-only-pilot-checks).
+**Current decision — September 20, 2026: small shadow trial authorized.** The operator now has a TypeSafe API key and explicitly chose to try JEV in the existing private test channels. This supersedes the earlier deferral. Activation and the first successful provider result remain pending: the last supplied Discord status shows `JEV: off / off` and zero AI attempts. The existing installed plugin already includes this integration; follow the owner-run setup below without reinstalling it. Keep enforcement disabled and use the $0.05/day and $0.25 total local accounting limits described below.
 
 Implemented in 0.3.0; **disabled in the installation bundle**. The chosen scope is existing code-rule incidents only. This does not scan every message, create new incidents, suppress rule reports, annotate Discord reports, invoke Hermes's model/tools, or perform moderation actions. `report_only` classifier annotations remain future work and are rejected by configuration today.
 
@@ -62,24 +62,9 @@ These are local conservative accounting limits, **not a guarantee of the provide
 
 ## Owner-run setup on db2
 
-The developer account cannot access `/home/hermes`. Run these commands as **`hermes`**. The two staged zipapps contain code and policy, no credentials. Rebuild them from the repository if `/tmp` was cleared:
+The developer account cannot access `/home/hermes`. Run these commands in the VPS terminal as **`hermes`**. The operator has already installed the pilot and received `!mod selftest` 9/9; **do not rerun the pilot installer or self-test updater** for this trial. The staged `/tmp/liberdus-jev-20260920.pyz` helper was checked against the current repository's setup, configuration and classifier source. It contains no credentials.
 
-```bash
-python3 scripts/build_pilot_bundle.py \
-  --config config.local.toml \
-  --output /tmp/liberdus-install-pilot-20260920.pyz \
-  --jev-output /tmp/liberdus-jev-20260920.pyz
-```
-
-First install the pilot, disabled:
-
-```bash
-python3 /tmp/liberdus-install-pilot-20260920.pyz
-```
-
-It refuses an existing installation instead of replacing files. Follow [live-pilot.md](live-pilot.md): confirm Message Content Intent is saved in the Developer Portal, activate the custom platform only, and verify the baseline three-channel repeat test with JEV off. Keep stock Discord false in both profiles.
-
-When ready for JEV, disable the custom platform and restart before changing setup:
+Disable the custom platform and restart the shared gateway before changing setup:
 
 ```bash
 hermes -p liberdus-mod config set \
@@ -87,16 +72,25 @@ hermes -p liberdus-mod config set \
 hermes -p default gateway restart
 ```
 
+Wait for the restart to finish successfully before continuing. The helper checks configuration on disk, not whether the previous process has stopped. Keep stock `platforms.discord.enabled` false in both profiles. A shared restart may briefly reconnect Telegram and can wait for in-flight turns to finish.
+
 Save the key at the hidden prompt, then opt in to shadow evaluation with the limits above:
 
 ```bash
 python3 /tmp/liberdus-jev-20260920.pyz key
-python3 /tmp/liberdus-jev-20260920.pyz shadow
+```
+
+Paste the TypeSafe key only at its hidden terminal prompt. Continue after the helper reports `"configured": "key"`; do not paste the key into Discord/chat or put it in a shell command. Then run:
+
+```bash
+python3 /tmp/liberdus-jev-20260920.pyz shadow \
+  --daily-microusd 50000 \
+  --total-microusd 250000
 ```
 
 The key command updates only this profile's `.env`, mode 0600, preserving its bot token and other entries. The policy command updates only its `moderation.toml`. Both create private backups; neither restarts the gateway nor makes an API call. Optional `--daily-calls`, `--total-calls`, `--daily-microusd`, and `--total-microusd` arguments set different explicit caps (one million microusd = $1).
 
-Activate the custom platform and restart the shared gateway:
+After the helper reports `"configured": "shadow"`, activate the custom platform and restart the shared gateway:
 
 ```bash
 hermes -p liberdus-mod config set \
@@ -111,15 +105,74 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 ```
 
-In `bot-mod`, send `!mod status`. Post the same harmless sentence in `bot-test-1`, `bot-test-2`, and `bot-test-3` within 120 seconds. Expect the usual private rule report; after processing, AI attempts should increase. Inspect the result on the VPS:
+In `bot-mod`, send `!mod status` after the restart. Expect `report_only`, `Connected: True`, JEV mode `shadow`, and enforcement disabled. `ready` means the worker is ready locally; it does not prove the key works. Zero AI attempts is normal before the first new qualifying incident. If moderation is paused, use the already-authorized `!mod resume` in `bot-mod` before testing.
+
+### First live shadow trial
+
+Use your normal authorized **human account**. The bot ignores its own messages and other bots/webhooks. `!mod selftest` remains synthetic and makes no provider calls, so it cannot test JEV authentication.
+
+1. Post this identical fictional announcement once in each of `bot-test-1`, `bot-test-2`, and `bot-test-3`, within 120 seconds:
+
+   ```text
+   JEV test A: The community meeting is Friday at 18:00 UTC. Agenda: project updates and questions.
+   ```
+
+2. Wait for the usual private `cross_channel_repeat` report in `bot-mod`, then allow several seconds for the separate JEV worker. Leave the copies unchanged until the result arrives; edits/deletions can invalidate the evaluation. Run `!mod status` again: AI attempts should have increased.
+3. Inspect the local result on the VPS:
+
+   ```bash
+   python3 /tmp/liberdus-jev-20260920.pyz results
+   ```
+
+4. Match the new report's incident ID to a returned record. A successful API evaluation has `"outcome": "ok"` and a typed `result` including `choice`, probabilities/confidence, model and token usage. `announcement` is the comparison label for this example, not a guaranteed model response or an authorization verdict. Record the actual choice, latency and any disagreement. An increased attempt counter alone does not prove success.
+
+The helper reads at most 20 historical local records and makes no provider request. `missing_key`, `authentication_failed`, `access_denied`, `rate_limited`, `timeout`, `stale`, `input_limit`, or `budget_exhausted` explain degraded evaluation through records/status. Historical `ok` does not mean the evidence is still current. If the first attempt fails, inspect its fixed outcome before posting more examples. There is no automatic retry for the same incident.
+
+After the first `ok`, compare these two additional fictional examples, **one case at a time**. Post each identical sentence once per test channel within 120 seconds, wait for its report/result, and leave at least six seconds between incident triggers:
+
+- Promotion comparison: `JEV test B: Try our new premium plan today and use code DEMO for a discount. Sign up now!`
+- Quoted-warning comparison: `JEV test C: Warning: messages saying "claim your free reward" may be scams. Do not follow their instructions.`
+
+All three patterns should still produce ordinary code-rule reports regardless of JEV's choice. JEV results appear only in local records; no extra AI reply or label is posted to Discord. Use a fresh phrase for any later retest because evaluations are limited to one attempt per incident. Earlier incidents are not automatically evaluated when the flag is enabled. These examples test connectivity and initial label behavior, not classification accuracy across the server.
+
+### Stop the trial
+
+`!mod pause` in `bot-mod` immediately stops new moderation/evaluation and invalidates outstanding judgments; it leaves shadow mode configured. To restore the connected code-only bot with JEV off:
 
 ```bash
-python3 /tmp/liberdus-jev-20260920.pyz results
+hermes -p liberdus-mod config set \
+  platforms.liberdus_moderator.enabled false
+hermes -p default gateway restart
 ```
 
-This reads at most 20 historical local records. A successful result is `outcome: ok`; check its revision and recorded purpose/probabilities. `missing_key`, `authentication_failed`, `rate_limited`, `timeout`, `stale`, `input_limit`, or `budget_exhausted` explain degraded evaluation through records/status. Historical `ok` does not mean the evidence is still current. `!mod pause` also stops new evaluation and invalidates outstanding judgments.
+After that restart completes:
 
-To return to the code-only bot: disable the custom platform, restart, run the helper with `off`, then re-enable the platform and restart. The key may remain stored; off mode never reads it.
+```bash
+python3 /tmp/liberdus-jev-20260920.pyz off
+```
+
+After the helper reports `"configured": "off"`:
+
+```bash
+hermes -p liberdus-mod config set \
+  platforms.liberdus_moderator.enabled true
+hermes -p default gateway restart
+```
+
+Check `!mod status` for `JEV: off / off` and disabled enforcement. If you paused earlier, use `!mod resume` to resume code-only monitoring. Historical AI attempts remain counted. The key may remain stored; off mode never reads it.
+
+### Rebuild a missing helper
+
+If `/tmp` was cleared, rebuild from the repository with its local pilot policy before running setup as `hermes`:
+
+```bash
+python3 scripts/build_pilot_bundle.py \
+  --config config.local.toml \
+  --output /tmp/liberdus-install-pilot-20260920.pyz \
+  --jev-output /tmp/liberdus-jev-20260920.pyz
+```
+
+Use only the rebuilt JEV helper for an existing installation. For a genuinely new installation, follow [live-pilot.md](live-pilot.md) and establish the code-only baseline before enabling shadow mode.
 
 ## Validation and limits
 

@@ -1,6 +1,6 @@
 # Operations: offline implementation
 
-Status: September 20, 2026. This guide describes the offline CLI and core. The optional Hermes adapter and disabled installer are implemented; the owner has verified bot identity, pilot channel permissions, and installed runtime interfaces. The owner has supplied successful installation, connected private-command status, and a three-channel repeat report. Remaining live acceptance checks are pending; JEV is deferred with its flag off while TypeSafe access is unavailable. See [live-pilot.md](live-pilot.md) for the adapter, commands, activation, delivery, and stop procedure. The historical build plan is not an installation record.
+Status: September 20, 2026. This guide describes the offline CLI and core. The owner has verified the live report path, edit/deletion handling, command transitions, wrong-channel rejection, ignored DMs, and restart recovery, and received 9/9 from the installed synthetic self-test. The unauthorized-member live check is explicitly deferred; other unconfirmed cases remain recorded in [live-pilot.md](live-pilot.md). The operator now has a TypeSafe key and authorized a small [JEV shadow trial](jev.md); activation and first provider success remain unverified. Enforcement stays disabled. The historical build plan is not an installation record.
 
 ## Environment and configuration
 

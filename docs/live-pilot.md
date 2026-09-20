@@ -1,6 +1,6 @@
 # Hermes report-only pilot
 
-The optional adapter is implemented and tested offline against Hermes commit `c1488ac947c9bc33fd65ec464548dc9d8edd6122`, Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3. The operator's runtime inspection confirms those installed versions and unchanged inspected interfaces. The owner has now supplied successful installation, connected private-command status, and a three-channel repeat report. The basic live path passed; the remaining cases below are still pending.
+The optional adapter is implemented and tested offline against Hermes commit `c1488ac947c9bc33fd65ec464548dc9d8edd6122`, Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3. The operator's runtime inspection confirms those installed versions and unchanged inspected interfaces. The owner has now verified the live report path and several recovery/boundary cases, and received 9/9 from the installed synthetic self-test; the checklist below distinguishes observed and unconfirmed cases. A small [JEV shadow trial](jev.md) is now authorized, with activation and first provider success pending. Existing scope and disabled enforcement remain unchanged.
 
 ## Installation and activation are separate
 
@@ -103,7 +103,7 @@ Plugin updates are manual and version-reviewed. Do not restore a saved configura
 
 The selected existing-incident classifier is implemented in version 0.3.0, default off. The installer uses schema 2 with an explicit disabled classifier table and zero budgets; neither installation nor ordinary fixture replay calls a model. The original discussion is preserved in build-plan section 10.6 and the implementation checkpoint appended in section 10.7.
 
-The operator has deferred JEV because TypeSafe access is pending. Complete the remaining acceptance checks with JEV off. [JEV setup](jev.md) is retained for a later explicit resumption; do not activate shadow mode during the current pilot stage. Shadow results stay local and never alter the private rule reports. The default profile needs no JEV plugin, skill, MCP or model change.
+The operator initially deferred JEV while awaiting TypeSafe access, then obtained a key and explicitly authorized a small shadow trial. Follow the current [JEV setup](jev.md) for the already-installed pilot. Activation and first provider success remain pending. Shadow results stay local and never alter private rule reports. The default profile needs no JEV plugin, skill, MCP or model change.
 
 ## Live baseline recorded — September 20, 2026
 
@@ -117,27 +117,23 @@ This is operator-reported live evidence for collection, matching and private del
 
 ## Remaining code-only pilot checks
 
-Keep JEV off, AI/enforcement disabled, and the approved scope unchanged. Use the normal text channels (not threads), plain text without attachments, the same author for each pattern, and a distinct phrase per test. Wait for command replies and allow at least one second between commands. `Pending reports: 0` is normal after successful delivery.
+The baseline results below were obtained with JEV off and enforcement disabled. Do not repeat passed tests solely to enable the authorized shadow trial. Use the same approved scope, human accounts, normal text channels, plain text without attachments, and a distinct phrase per pattern. Allow at least one second between commands. `Pending reports: 0` is normal after successful delivery.
 
-| Check | Action in approved test scope | Expected result |
+| Check | Recorded result | Status / remaining scope |
 | --- | --- | --- |
-| Pause/resume | State changes and a new report after resume are operator-confirmed; see the checkpoint below. | Paused-pattern suppression still needs explicit confirmation that the paused test messages were posted without a report. |
-| Same-channel repetition — passed | Operator supplied incident `9b8820010d384c94ac575a2c97a31ce1`, revision 1. | `same_channel_repeat`, four copies and four evidence links in `bot-test-1`, reported privately. |
-| Edited evidence — passed | Operator supplied the lookup for incident `0e4677d84316465bb19dbe2c788bb283`, revision 2, after the instructed edit. | `State: withdrawn`; the three saved evidence items and original report remain historical snapshots. |
-| Deleted evidence | Delete one of your disposable test messages, then inspect `!mod status`. | A coverage reset with `deleted_message`; current detection evidence is cleared. Already-delivered reports remain historical. |
-| Command authorization | Try your own `!mod pause` in `bot-test-1`; have a non-operator who already has access try it in `bot-mod`. Check status from your authorized account. | No state change or privileged command response for either attempt. Do not grant extra access just for this test. |
-| DMs/mentions | DM the bot and mention it in an approved test channel. | No general conversation or tool dispatch. A test-channel mention is ordinary rule evidence; it is not an admin command. |
-| Restart/duplicate delivery | While paused, restart the shared gateway during a quiet test period, then check status, resume and create a fresh pattern. | Pause persists; old reports are not replayed; connection returns and a new pattern works. Telegram may briefly reconnect. |
+| Pause/resume | Command transitions, resumed detection and paused-state persistence across restart are operator-confirmed. | Passed for those behaviors. The supplied excerpts do not explicitly pair paused-pattern posts with absence of a report; retain that narrower evidence gap without restarting the completed test sequence. |
+| Same-channel repetition | Incident `9b8820010d384c94ac575a2c97a31ce1`, revision 1, four copies in `bot-test-1`. | Passed: private `same_channel_repeat` report. |
+| Edited evidence | Incident `0e4677d84316465bb19dbe2c788bb283`, revision 2, `withdrawn`. | Passed: saved evidence and the old report remain historical. |
+| Deleted evidence | Coverage resets increased from 4 to 5, last reason `deleted_message`, current messages 0. | Passed: connected and report-only; four historical incidents retained. |
+| Operator command in wrong channel | Operator confirmed `!mod pause` in a test channel did not pause; authorized status remained `report_only`. | Passed. |
+| Unauthorized member in `bot-mod` | Operator chose to skip the other-member test for now. | Explicitly deferred; do not mark passed or widen channel access to run it. |
+| DM | Operator reported no DM response; authorized status remained unchanged. | Passed for the reported DM test. A dedicated mention/general-dispatch live case is not separately evidenced. |
+| Actual gateway restart | After the instructed restart, status remained `paused`, connected, with four incidents; resume produced a fresh cross-channel report. | Passed for pause persistence and fresh detection. No exhaustive live duplicate-delivery test is claimed. |
+| `!mod selftest` | Installed command returned 9/9 passed and zero self-test AI calls/public actions. | Synthetic logic coverage only; does not fill unobserved live cases or authenticate JEV. |
 
-Start with pause/resume:
+The next selected task is the [first JEV shadow trial](jev.md#first-live-shadow-trial), not a repetition of this checklist. Continue normal-message and false-positive observation in the existing test channels. Record additional evidence when available; a broader channel pilot and enforcement remain later decisions.
 
-1. In `bot-mod`, send `!mod pause` and wait for the reply to show `paused`.
-2. Post `Liberdus paused moderation test.` once in each of the three test channels within 120 seconds. There should be no new report for this phrase.
-3. In `bot-mod`, send `!mod resume` and wait for the `report_only` reply. The paused messages are not replayed.
-4. Post `Liberdus resumed moderation test.` once in each of the three test channels within 120 seconds. Expect a new private `cross_channel_repeat` report.
-5. Send `!mod status`: JEV should still be `off / off`, AI attempts zero, and enforcement disabled. Record the observed result before proceeding to the other checks.
-
-Unconfirmed expectations in this table remain pending; the checkpoints record the operator evidence received so far. After they pass, use a short observation period in the approved test channels to review false positives and report usefulness. Adjust thresholds or explicitly scoped announcement exceptions from those observations. A broader channel pilot and any enforcement implementation are later decisions; TypeSafe access is not a prerequisite for the current work.
+The following dated sections preserve earlier results and the test instructions given at each checkpoint. Their “next test” text is historical; use the current checklist above and JEV runbook for the next task.
 
 ## Pause/resume results recorded — September 20, 2026
 
@@ -175,6 +171,14 @@ A monitored-channel deletion conservatively clears the entire working detection 
 
 ## Automated self-test available in 0.3.1 — September 20, 2026
 
-The operator asked to reduce manual testing. `!mod selftest` now runs nine fixed, isolated checks and returns one private summary, including deletion-reset and pause/recovery logic. The moderator continues to ignore its own output and other bots/webhooks. Self-tests do not post test messages or change the real pause state, policy or evidence. Follow [self-test deployment and coverage](selftest.md) for the one-time owner-run update; the running 0.3.0 installation has not yet been updated by the developer.
+The operator asked to reduce manual testing. `!mod selftest` now runs nine fixed, isolated checks and returns one private summary, including deletion-reset and pause/recovery logic. The moderator continues to ignore its own output and other bots/webhooks. Self-tests do not post test messages or change the real pause state, policy or evidence. The operator subsequently installed the update and supplied a 9/9 response. [Self-test deployment and coverage](selftest.md) retains the update procedure for older installations; this pilot does not need another update.
 
-The new command verifies code paths with synthetic inputs and a default test policy. It does not verify real Discord permissions/events or an actual service restart. Keep the remaining live acceptance results explicitly pending until observed. JEV is still deferred/off. No new Discord permissions, bot account or API key is needed.
+The new command verifies code paths with synthetic inputs and a default test policy. It does not verify real Discord permissions/events or an actual service restart. Keep unobserved live cases explicitly pending. The self-test needs no new Discord permissions, bot account or API key and makes no JEV calls even when shadow mode is enabled.
+
+## Later live results and JEV trial decision — September 20, 2026
+
+The operator's 3:07 PM self-test response reported all nine synthetic cases passed, with zero self-test AI calls and public actions. At 3:29 PM, the supplied deletion comparison showed coverage resets 4 → 5 and `Last: deleted_message`, while working messages stayed at zero, four incidents remained retained, and the bot stayed connected/report-only. The operator then confirmed that a test-channel `!mod pause` did not pause the bot and that a DM received no response; the supplied authorized status remained report-only.
+
+At 3:48 PM, after the instructed paused restart, `!mod status` returned `paused`, `Connected: True`, four retained incidents, no pending/uncertain reports, and eight coverage resets with `reconnect` last. `!mod resume` returned `report_only`, followed by fresh incident `dfc2c81d0c584ef6b04c9bb33713f04c`, revision 1, `cross_channel_repeat`, author `977263877391794217`, three test-channel copies. This confirms paused-state persistence across the real restart and resumed detection. These statuses all showed JEV off, zero AI attempts and disabled enforcement. The unauthorized-other-member check was explicitly deferred by the operator.
+
+The operator then obtained a TypeSafe key and authorized the small existing-incident shadow trial. The current [JEV runbook](jev.md) uses a hidden key prompt and $0.05/day / $0.25 total local accounting limits. No profile was changed, key read, provider request made, or gateway restarted while preparing these instructions. Activation and a successful typed provider result still need owner-run evidence. The bot continues to exclude bot/webhook posts even though the operator subsequently allowed it to send in test channels; the JEV trial uses human-authored messages.
