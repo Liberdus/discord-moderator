@@ -1,3 +1,3 @@
 """Offline, report-only moderation core for the Liberdus Hermes plugin."""
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"

@@ -34,7 +34,7 @@ class UpdateTests(unittest.TestCase):
         shutil.copytree(ROOT / "liberdus_moderator", self.target / "liberdus_moderator",
                         ignore=shutil.ignore_patterns("__pycache__"))
         self.manifest = self.target / "plugin.yaml"
-        self.manifest.write_text(self.manifest.read_text().replace("0.3.2", "0.3.1"))
+        self.manifest.write_text(self.manifest.read_text().replace("0.3.3", "0.3.2"))
         (self.target / "previous-version-marker").write_text("keep in backup")
         (self.home / "hermes-agent").symlink_to(SOURCE)
         self.config = self.profile / "config.yaml"
@@ -68,7 +68,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(result["isolated_selftest"], "9/9 passed")
         self.assertFalse(result["platform_enabled"])
         self.assertFalse(result["gateway_restarted"])
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.2")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.3")
         self.assertEqual((Path(result["plugin_backup"]) / "previous-version-marker").read_text(), "keep in backup")
         self.assertEqual(self.preserved(), before)
         with self.assertRaisesRegex(ValueError, "requires an existing version"):
@@ -88,11 +88,11 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse(result["database_changed"])
         self.assertFalse(result["policy_changed"])
         self.assertFalse(result["token_read"])
-        self.assertEqual(result["version"], "0.3.2")
+        self.assertEqual(result["version"], "0.3.3")
 
     def test_original_030_pilot_can_also_upgrade(self):
-        self.manifest.write_text(self.manifest.read_text().replace("0.3.1", "0.3.0"))
-        self.assertEqual(update(self.bundle, self.home)["version"], "0.3.2")
+        self.manifest.write_text(self.manifest.read_text().replace("0.3.2", "0.3.0"))
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.3.3")
 
     def test_enabled_or_still_running_pilot_is_refused(self):
         original = self.config.read_text()
@@ -107,7 +107,7 @@ class UpdateTests(unittest.TestCase):
                 update(self.bundle, self.home)
         finally:
             os.close(lock)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.2")
         self.assertFalse(list(self.profile.glob(".liberdus-update-backup-*")))
 
     def test_bad_archive_cannot_escape_stage_or_replace_existing_code(self):
@@ -115,7 +115,7 @@ class UpdateTests(unittest.TestCase):
             archive.writestr("plugin/../../escape", "bad")
         with self.assertRaisesRegex(ValueError, "Unexpected plugin archive member"):
             update(self.bundle, self.home)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.2")
         self.assertFalse(list(self.target.parent.glob(".liberdus-update-stage-*")))
 
     def test_failed_import_leaves_previous_plugin_and_profile(self):
@@ -124,7 +124,7 @@ class UpdateTests(unittest.TestCase):
             run.return_value.returncode = 1
             with self.assertRaisesRegex(ValueError, "import or isolated self-test"):
                 update(self.bundle, self.home)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.2")
         self.assertEqual(self.preserved(), before)
 
     def test_publish_failure_restores_old_plugin(self):
@@ -138,7 +138,7 @@ class UpdateTests(unittest.TestCase):
         with patch("liberdus_moderator.update_pilot.os.replace", side_effect=fail_new_publish):
             with self.assertRaisesRegex(OSError, "simulated publish failure"):
                 update(self.bundle, self.home)
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.1")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.2")
         self.assertTrue((self.target / "previous-version-marker").exists())
 
 

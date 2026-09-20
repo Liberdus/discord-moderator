@@ -194,7 +194,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.adapter.live.engine.status(), before)
         self.channel.send.assert_awaited_once()
         args, kwargs = self.channel.send.call_args
-        self.assertIn("JEV (saved shadow): quoted_warning", args[0])
+        self.assertIn("Label     : Quoted warning", args[0])
+        self.assertEqual(args[0].count("```"), 2)
         self.assertIn("no new AI call", args[0])
         self.assertNotIn("Repeated test message", args[0])
         self.assertLess(len(args[0]), 1900)

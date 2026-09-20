@@ -5,6 +5,7 @@ import json
 import math
 import re
 import sqlite3
+import textwrap
 
 from .classifier import MODEL, RUBRIC_HASH, encoded, validate_response
 
@@ -22,7 +23,7 @@ REASONS = {
     "clock_changed": "evaluation time is ahead of this clock",
     "disabled": "classification is off",
     "paused": "moderation paused",
-    "incident_changed": "incident closed or evidence window reset",
+    "incident_changed": "incident closed or window reset",
     "expired": "evidence window expired",
     "revision_changed": "incident revision changed",
     "evidence_changed": "evidence changed or unavailable",
@@ -130,16 +131,46 @@ def _age(seconds):
     return f"{seconds}s ago"
 
 
+PANEL_WIDTH = 32
+
+
+def _field(label, value):
+    return textwrap.fill(str(value), width=PANEL_WIDTH, initial_indent=f"{label:<10}: ",
+                         subsequent_indent=" " * 12, break_on_hyphens=False)
+
+
 def format_classification(view):
-    if view["outcome"] == "not_evaluated":
-        return "JEV: no saved evaluation for this incident. No new AI call."
-    if view["outcome"] == "unavailable":
-        return "JEV: saved evaluation unavailable. No new AI call."
-    lines = [f"JEV (saved shadow): {view.get('choice', view['outcome'])}"]
+    """Plain ASCII rows for a narrow Discord code block; inputs are validated."""
+    lines = ["JEV - SAVED RESULT", "-" * PANEL_WIDTH]
+    if view["outcome"] in {"not_evaluated", "unavailable"}:
+        lines.append(_field("Result", "No saved evaluation" if view["outcome"] == "not_evaluated"
+                            else "Saved evaluation unavailable"))
+        return "\n".join(lines)
     if view["outcome"] == "ok":
-        lines.append(f"Confidence: {view['confidence']:.2f} (model score)")
-    lines += [f"Outcome: {view['outcome']} | Model: {view['model']}",
-              f"Evaluated revision: {view['revision']} | Age: {_age(view['age_seconds'])}",
-              f"Evidence: {view['evidence_state']} ({REASONS[view['reason']]})",
-              "Saved result only; no new AI call."]
+        lines += [_field("Label", view["choice"].replace("_", " ").capitalize()),
+                  _field("Confidence", f"{view['confidence']:.2f} (model score)")]
+    lines += [_field("Outcome", "OK" if view["outcome"] == "ok" else view["outcome"].replace("_", " ").capitalize()),
+              _field("Model", view["model"]), _field("Eval rev", view["revision"]),
+              _field("Age", _age(view["age_seconds"])),
+              _field("Evidence", view["evidence_state"].upper()),
+              _field("Reason", REASONS[view["reason"]].capitalize())]
     return "\n".join(lines)
+
+
+def format_incident(incident):
+    """Keep long copyable IDs outside the 32-column, single-column data panel."""
+    rules = {"cross_channel_repeat": "Cross-channel repeat", "same_channel_repeat": "Same-channel repeat",
+             "blocked_domain": "Blocked domain"}
+    states = {"open": "Open", "withdrawn": "Withdrawn", "expired": "Expired", "paused": "Paused",
+              "needs_revalidation": "Needs recheck", "policy_changed": "Policy changed"}
+    lines = ["CODE RULE", "-" * PANEL_WIDTH,
+             _field("Rule", rules.get(incident["rule_id"], "Unknown rule")),
+             _field("State", states.get(incident["status"], "Unknown state")),
+             _field("Revision", incident["revision"]),
+             _field("Evidence", f"{len(incident['evidence'])} messages"), "",
+             format_classification(incident["classification"])]
+    return ("**Moderation review**\n```\n" + "\n".join(lines) + "\n```\n"
+            f"**Incident ID**\n`{incident['id']}`\n"
+            f"**Author ID** `{incident['author_id']}`\n"
+            "*Saved snapshot. Enforcement disabled.*\n"
+            "*Saved result only; no new AI call.*")
