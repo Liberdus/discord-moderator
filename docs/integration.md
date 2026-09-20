@@ -1,5 +1,7 @@
 # Hermes integration evidence and next steps
 
+**Latest checkpoint — September 20, 2026:** installation, private `!mod status`, and the three-channel repeat report are operator-confirmed. JEV is deferred with its flag off because TypeSafe access is pending. Earlier checkpoints below retain their historical scope; see the [latest live evidence](#live-baseline-and-jev-deferral--september-20-2026) and [remaining pilot checks](live-pilot.md#remaining-code-only-pilot-checks).
+
 ## September 20 operator-reported checkpoint
 
 This checkpoint supersedes unknowns in the September 15 inventory below; the older source review is retained as historical evidence.
@@ -11,7 +13,7 @@ This checkpoint supersedes unknowns in the September 15 inventory below; the old
 - The core and preflight tests pass on Python 3.11.16 and 3.12.3 (77 tests). The package now accepts Python >=3.11. This is compatibility evidence for this package, not evidence of successful loading into Hermes.
 - The separate [read-only preflight](preflight.md) checks token identity, guild membership, text-channel scope, and effective permissions without reading or sending messages or starting a gateway. The operator ran it and supplied passing live metadata checks on September 20; details below.
 
-At that initial checkpoint the adapter and installed interfaces were pending. The subsequent sections record verified installed interfaces and completed offline adapter work. Actual installation, Portal intent confirmation, and Phase 4 live acceptance remain pending.
+At that initial checkpoint the adapter and installed interfaces were pending. The subsequent sections record verified installed interfaces and completed offline adapter work. Later operator evidence confirms installation and the basic live report path; full Phase 4 acceptance remains open.
 
 ## September 20 Discord preflight result
 
@@ -24,7 +26,7 @@ The operator ran the owner-side preflight and supplied its output. Token identit
 | bot-test-3 | 1551249693399584818 | yes | no | yes | no |
 | bot-mod | 1551252553331642558 | yes | yes | yes | no |
 
-All required metadata permission checks passed. An additional role/member overwrite `1302455329795342377` grants view access in all four channels; its identity and membership have not been audited. The preflight neither read nor sent messages. Gateway intents, event capture, and delivery remain unverified; the bot has not been activated by this result.
+All required metadata permission checks passed. An additional role/member overwrite `1302455329795342377` grants view access in all four channels; its identity and membership have not been audited. The preflight neither read nor sent messages. This preflight alone did not verify gateway intents, event capture or delivery and did not activate the bot. Subsequent live evidence is recorded below.
 
 ### Selected integration direction
 
@@ -34,7 +36,7 @@ The exact c1488 upstream source supports `PluginContext.register_platform`, prof
 
 `scripts/inspect_hermes_runtime.py` is the next owner-run check. It reads installed source/version metadata and imports the required interfaces using the installation's Python under an empty temporary HOME/HERMES_HOME. It omits inherited credentials and raw import logs, disables bytecode writes, and blocks network/process creation during the child import probe. It does not call the real profile configuration loader, load plugins, change packages, or restart services. This probe passed its interface checks against the public c1488 source with isolated Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3; the operator then supplied the installed-environment result: all interfaces passed, the full commit matches, inspected interface files are unmodified, and Python/discord.py/aiohttp/PyYAML versions match (3.11.16 / 2.7.1 / 3.14.3 / 6.0.3).
 
-The dedicated adapter is now implemented with bounded event/edit handling, code-only private commands, durable delivery outcomes, and no conversational fallback. The disabled installer and real Hermes loader/config boundaries pass offline tests. Installation and live acceptance are still pending; keep both stock Discord configurations disabled. See [live pilot instructions](live-pilot.md) for installation, activation conditions, tested behavior, and recovery.
+The dedicated adapter is now implemented with bounded event/edit handling, code-only private commands, durable delivery outcomes, and no conversational fallback. The disabled installer and real Hermes loader/config boundaries pass offline tests. The subsequent live checkpoint confirms installation and the basic report path; remaining live acceptance is pending. Keep both stock Discord configurations disabled. See [live pilot instructions](live-pilot.md) for installation, activation conditions, tested behavior, and recovery.
 
 ## Historical September 15 review
 
@@ -117,4 +119,10 @@ Offline unit tests and source inspection provide useful preparation but cannot s
 
 ## Optional JEV worker — September 20, 2026
 
-Version 0.3.0 implements default-off JEV shadow evaluation alongside the rules and report sender. The selected API integration bypasses the general agent loop and uses the owning profile's TypeSafe key. No JEV skill or MCP is installed in `liberdus-mod`. See [integration comparison, account/key setup and budgets](jev.md); build-plan section 10.7 records the selected scope. The existing zero-inference baseline remains the first live test before any shadow opt-in.
+Version 0.3.0 implements default-off JEV shadow evaluation alongside the rules and report sender. The selected API integration bypasses the general agent loop and uses the owning profile's TypeSafe key. No JEV skill or MCP is installed in `liberdus-mod`. See [integration comparison, account/key setup and budgets](jev.md); build-plan section 10.7 records the selected scope. The basic zero-inference baseline has now passed. Shadow opt-in is deferred by the operator while TypeSafe access is unavailable.
+
+## Live baseline and JEV deferral — September 20, 2026
+
+The owner supplied a successful installer result, enabled the custom moderation platform, and restarted the shared service to PID `876774` at that checkpoint. `!mod status` in `bot-mod` returned connected/report-only status, JEV off, zero AI attempts and disabled enforcement. A fresh qualifying message repeated across all three approved test channels produced private incident report `1ce20048a42442bc92784aaaa9184d69`, revision 1, rule `cross_channel_repeat`, author `977263877391794217`, three copies and the expected channel links.
+
+This establishes the basic collection/match/private-delivery path from operator evidence. It does not complete the remaining edit/delete, pause/resume, exclusion, authorization, or restart/duplicate-delivery checks. Follow the [remaining code-only pilot checks](live-pilot.md#remaining-code-only-pilot-checks). TypeSafe access is unavailable and the operator explicitly deferred JEV; keep the flag off and continue the existing pilot. No provider or runtime change was made while recording this checkpoint.

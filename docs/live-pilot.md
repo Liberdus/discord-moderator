@@ -1,6 +1,6 @@
 # Hermes report-only pilot
 
-The optional adapter is implemented and tested offline against Hermes commit `c1488ac947c9bc33fd65ec464548dc9d8edd6122`, Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3. The operator's runtime inspection confirms those installed versions and unchanged inspected interfaces. Live Discord message acceptance tests remain pending.
+The optional adapter is implemented and tested offline against Hermes commit `c1488ac947c9bc33fd65ec464548dc9d8edd6122`, Python 3.11.16, discord.py 2.7.1, and aiohttp 3.14.3. The operator's runtime inspection confirms those installed versions and unchanged inspected interfaces. The owner has now supplied successful installation, connected private-command status, and a three-channel repeat report. The basic live path passed; the remaining cases below are still pending.
 
 ## Installation and activation are separate
 
@@ -81,7 +81,7 @@ Supported private text commands are `!mod status`, `!mod pause`, `!mod resume`, 
 Only use the approved test channels and `bot-mod`:
 
 1. Verify current-process runtime status for `liberdus-mod:liberdus_moderator`; bot online alone is insufficient. In `bot-mod`, the operator sends `!mod status` and receives code-only, enforcement-disabled status.
-2. Post the same substantive test sentence once in each of the three test channels within 120 seconds. Expect one private review report, no public reply, and no AI turn. Include an unmentioned message and a message mentioning another member.
+2. Post the same substantive test sentence of at least 20 characters once in each of the three test channels within 120 seconds. Expect one private review report, no public reply, and no AI turn. Include an unmentioned message and a message mentioning another member.
 3. Edit evidence, including an older uncached message, and inspect the incident status. Exercise an unavailable/deleted message and confirm a visible coverage reset. Already-delivered reports remain snapshots.
 4. Check a public bot mention, a DM, an unauthorized user's private command, duplicate events/reconnects, and a deliberate pause/resume. None may create AI/tool access or duplicate private reports.
 5. Verify model usage remains zero for these paths and record observed results. Offline tests do not close this live acceptance step.
@@ -103,4 +103,38 @@ Plugin updates are manual and version-reviewed. Do not restore a saved configura
 
 The selected existing-incident classifier is implemented in version 0.3.0, default off. The installer uses schema 2 with an explicit disabled classifier table and zero budgets; neither installation nor ordinary fixture replay calls a model. The original discussion is preserved in build-plan section 10.6 and the implementation checkpoint appended in section 10.7.
 
-Run the initial acceptance checklist above with JEV off. Then follow [JEV setup](jev.md) for TypeSafe account/key instructions, protected owner-run helpers, and optional shadow activation. Shadow results stay local and never alter the private rule reports. The default profile needs no JEV plugin, skill, MCP or model change.
+The operator has deferred JEV because TypeSafe access is pending. Complete the remaining acceptance checks with JEV off. [JEV setup](jev.md) is retained for a later explicit resumption; do not activate shadow mode during the current pilot stage. Shadow results stay local and never alter the private rule reports. The default profile needs no JEV plugin, skill, MCP or model change.
+
+## Live baseline recorded — September 20, 2026
+
+The operator supplied installation success, custom-platform enablement and shared gateway restart (PID `876774` at that time), a successful `!mod status` reply (`Connected: True`, `report_only`, `JEV: off / off`, zero AI attempts, enforcement disabled), and this report:
+
+- Incident: `1ce20048a42442bc92784aaaa9184d69`, revision 1.
+- Rule: `cross_channel_repeat`; author: `977263877391794217`.
+- Three observed copies and links to `bot-test-1`, `bot-test-2`, and `bot-test-3`, delivered to `bot-mod`.
+
+This is operator-reported live evidence for collection, matching and private delivery. It does not verify every exclusion, permission boundary, edit, or reconnect case. No new profile edit or restart is needed to keep JEV off. The initial 19-character phrase was too short for a repeat report; the subsequent qualifying phrase worked. Short messages should still contribute to the received-message count, so length alone did not explain the earlier zero count.
+
+## Remaining code-only pilot checks
+
+Keep JEV off, AI/enforcement disabled, and the approved scope unchanged. Use the normal text channels (not threads), plain text without attachments, the same author for each pattern, and a distinct phrase per test. Wait for command replies and allow at least one second between commands. `Pending reports: 0` is normal after successful delivery.
+
+| Check | Action in approved test scope | Expected result |
+| --- | --- | --- |
+| Pause/resume | Run the sequence below. | No new incident/report from messages received while paused; new messages after resume can trigger a report. |
+| Same-channel repetition | Post `Liberdus single-channel spam test.` four times in `bot-test-1` within 30 seconds. | One `same_channel_repeat` incident and a private report. |
+| Edited evidence | Create a fresh three-channel incident, then edit one copy to different text before the 120-second window closes. Run `!mod incident NEW_ID` in `bot-mod`. | The current incident is withdrawn when fewer than three matching channels remain, or expired if the time window elapsed. The original report remains unchanged. |
+| Deleted evidence | Delete one of your disposable test messages, then inspect `!mod status`. | A coverage reset with `deleted_message`; current detection evidence is cleared. Already-delivered reports remain historical. |
+| Command authorization | Try your own `!mod pause` in `bot-test-1`; have a non-operator who already has access try it in `bot-mod`. Check status from your authorized account. | No state change or privileged command response for either attempt. Do not grant extra access just for this test. |
+| DMs/mentions | DM the bot and mention it in an approved test channel. | No general conversation or tool dispatch. A test-channel mention is ordinary rule evidence; it is not an admin command. |
+| Restart/duplicate delivery | While paused, restart the shared gateway during a quiet test period, then check status, resume and create a fresh pattern. | Pause persists; old reports are not replayed; connection returns and a new pattern works. Telegram may briefly reconnect. |
+
+Start with pause/resume:
+
+1. In `bot-mod`, send `!mod pause` and wait for the reply to show `paused`.
+2. Post `Liberdus paused moderation test.` once in each of the three test channels within 120 seconds. There should be no new report for this phrase.
+3. In `bot-mod`, send `!mod resume` and wait for the `report_only` reply. The paused messages are not replayed.
+4. Post `Liberdus resumed moderation test.` once in each of the three test channels within 120 seconds. Expect a new private `cross_channel_repeat` report.
+5. Send `!mod status`: JEV should still be `off / off`, AI attempts zero, and enforcement disabled. Record the observed result before proceeding to the other checks.
+
+All rows in this remaining-checks table are pending until operator evidence is recorded. After they pass, use a short observation period in the approved test channels to review false positives and report usefulness. Adjust thresholds or explicitly scoped announcement exceptions from those observations. A broader channel pilot and any enforcement implementation are later decisions; TypeSafe access is not a prerequisite for the current work.

@@ -844,3 +844,26 @@ report          |
 **Next steps:** install the disabled pilot and verify the original live code-only test. Obtain a TypeSafe API key from its console, store it with the hidden-prompt helper in the `liberdus-mod` profile, and explicitly enable shadow mode after checking account billing/data handling. The helper performs a protected schema migration without restarting anything. Owner instructions are in `docs/jev.md`; staged artifacts are `/tmp/liberdus-install-pilot-20260920.pyz` and `/tmp/liberdus-jev-20260920.pyz`. Stock Discord stays disabled in both profiles.
 
 Offline automated tests cover default-off isolation, schema migration, response validation, budgets and restarts, failures, stale evidence, setup helpers and unaffected private-report delivery while JEV waits. They do not establish JEV moderation accuracy or complete live Discord acceptance. Evaluate labeled spam, legitimate announcements, quoted warnings, multilingual messages and adversarial text before considering report annotations. Broader scanning, feedback learning and enforcement remain separate future work.
+
+
+### 10.8 Live code-only baseline passed; JEV deferred — September 20, 2026
+
+**Operator decision:** TypeSafe access is not available yet. Continue the Discord moderation pilot without JEV and return to JEV later. Keep `ai_enabled = false`, `classifier.mode = "off"`, and `actions_enabled = false`; the classifier budgets remain zero in the staged pilot policy. Do not run the JEV key/shadow setup steps during this stage. Later account access does not authorize automatic activation. No configuration change or service restart is needed to preserve the already-off state.
+
+**Operator-supplied live evidence:**
+
+- The owner ran the installer successfully (`installed: true`, installed-runtime import passed), enabled only `platforms.liberdus_moderator`, and restarted the shared gateway to PID `876774` at that checkpoint. This PID is historical evidence, not a permanent service identifier.
+- `!mod status` in `bot-mod` returned `report_only`, `Connected: True`, `JEV: off / off`, `AI attempts: 0`, and enforcement disabled.
+- Repeating qualifying text across the three test channels produced incident `1ce20048a42442bc92784aaaa9184d69`, revision 1, rule `cross_channel_repeat`, author `977263877391794217`, and three observed copies, with a private report linking the three test channels. This confirms the basic message collection → rule match → private report path in the installed pilot. It does not complete all live acceptance checks.
+- The earlier phrase `testing out the bot` has 19 characters, below the repeat rule's 20-character minimum. Use substantive text of at least 20 characters for repeat tests. Short received messages still count; the earlier zero message count was not explained by that length threshold. The subsequent fresh test succeeded.
+
+**Next work, with JEV off and monitoring restricted to the existing test channels:**
+
+1. Verify `!mod pause` and `!mod resume` from `bot-mod`. While paused, a fresh three-channel pattern must not create a new report. After resume, post a different fresh pattern; pre-resume messages are not backfilled. Wait for each command reply before continuing.
+2. Verify same-channel repetition: post identical substantive text four times in one test channel within 30 seconds. Expect one `same_channel_repeat` incident/report. Use a new phrase for each test so existing grouping/cooldowns do not confuse the result.
+3. Verify current evidence: create a fresh three-channel incident, edit one copy to different text while the 120-second window is still active, and inspect that new incident ID. Expect withdrawal when fewer than three matching channels remain (or expiry if the window elapsed). Deleting a test message triggers a coverage reset; already-posted reports stay as historical snapshots.
+4. Verify command boundaries using existing approved access: an operator's `!mod pause` in a test channel must not pause the bot; a non-operator's command in `bot-mod` must not change state or receive a privileged reply; DMs must not open a conversation. Do not widen channel access or use public/committee channels for these tests.
+5. Verify restart behavior during a quiet test period: pause, restart the shared gateway, and check that pause persists and old reports are not replayed; then resume and verify a new pattern. A shared gateway restart can briefly reconnect Telegram. A changed coverage-reset count is expected; this is not historical catch-up.
+6. Review report clarity, duplicate handling and false positives during a short observation period in the approved test channels. Tune repeat thresholds and narrowly scoped approved-crosspost exceptions only from observed cases. Record results before considering a separately scoped production-channel pilot.
+
+The detailed owner-run checks and expected outputs are in repository `docs/live-pilot.md`. JEV activation, broader semantic scanning, general Hermes chat, and enforcement remain separate later work. This checkpoint records the user's supplied output; no Discord messages, profile changes, provider calls, or restarts were performed while updating the documentation.

@@ -1,6 +1,6 @@
 # Operations: offline implementation
 
-Status: September 20, 2026. This guide describes the offline CLI and core. The optional Hermes adapter and disabled installer are implemented; the owner has verified bot identity, pilot channel permissions, and installed runtime interfaces. Live installation and acceptance remain pending. See [live-pilot.md](live-pilot.md) for the adapter, commands, activation, delivery, and stop procedure. The historical build plan is not an installation record.
+Status: September 20, 2026. This guide describes the offline CLI and core. The optional Hermes adapter and disabled installer are implemented; the owner has verified bot identity, pilot channel permissions, and installed runtime interfaces. The owner has supplied successful installation, connected private-command status, and a three-channel repeat report. Remaining live acceptance checks are pending; JEV is deferred with its flag off while TypeSafe access is unavailable. See [live-pilot.md](live-pilot.md) for the adapter, commands, activation, delivery, and stop procedure. The historical build plan is not an installation record.
 
 ## Environment and configuration
 
@@ -74,7 +74,7 @@ Read [integration notes](integration.md) and [live-pilot.md](live-pilot.md). The
 
 Verify the actual bot identity, application ownership, server installation, requested intents, and effective channel permissions. Confirm ordinary messages and relevant edit events reach this core before any command/public-content interpretation by Hermes. Confirm private command identity and private report delivery without inference. Keep the initial pilot report-only with the current AI/actions settings disabled.
 
-The existing shared gateway owns the service. Its moderation token remains profile-local. The optional adapter/sender is ready for disabled installation; production channel selection and live acceptance remain separate future steps. Passing local tests does not establish live bot coverage or complete the build plan.
+The existing shared gateway owns the service. Its moderation token remains profile-local. The adapter/sender is installed and its basic live path is operator-confirmed; remaining live checks and any production channel selection are separate steps. Passing local tests does not establish live bot coverage or complete the build plan.
 
 ## GitHub checks
 

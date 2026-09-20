@@ -1,5 +1,7 @@
 # Optional JEV shadow evaluation
 
+**Current decision — September 20, 2026: deferred.** The operator does not yet have TypeSafe access and chose to continue the code-only pilot. Keep `ai_enabled = false` and `classifier.mode = "off"`; the latest supplied Discord status confirms `JEV: off / off` and zero AI attempts. The setup/activation instructions below are retained for a later explicit resumption, not the next pilot step. No TypeSafe account, key or payment is needed for the current deterministic moderation tests. Continue with the [remaining live pilot checks](live-pilot.md#remaining-code-only-pilot-checks).
+
 Implemented in 0.3.0; **disabled in the installation bundle**. The chosen scope is existing code-rule incidents only. This does not scan every message, create new incidents, suppress rule reports, annotate Discord reports, invoke Hermes's model/tools, or perform moderation actions. `report_only` classifier annotations remain future work and are rejected by configuration today.
 
 ## Integration review before implementation — September 20, 2026

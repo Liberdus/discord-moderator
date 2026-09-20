@@ -2,7 +2,7 @@
 
 A **report-only moderation core** with an optional, explicitly enabled Hermes Discord pilot plugin. It accepts synthetic Discord-shaped events, applies deterministic rules, and records evidence, review incidents, and pending private-report payloads in SQLite. The moderation core has no runtime dependencies and makes no AI or Discord calls. A separate, explicitly invoked preflight utility makes read-only Discord API requests to verify setup.
 
-**Status, September 20, 2026:** the operator supplied the pilot IDs and created the `liberdus-mod` Hermes profile. Its token was moved into that profile, and stock Discord remains disabled in both profiles. The pilot configuration validates locally; the owner-run Discord preflight confirms bot identity and required channel permissions. The owner also verified the installed Hermes interfaces and dependency versions. The optional adapter and default-off, incident-only JEV shadow worker are implemented and tested offline; installation, Portal intent confirmation, and live message/delivery acceptance remain pending. See [live pilot installation and recovery](docs/live-pilot.md), [preflight instructions](docs/preflight.md) and [integration notes](docs/integration.md).
+**Status, September 20, 2026:** the owner installed the plugin in `liberdus-mod`, enabled the custom moderation platform, and supplied a live `!mod status` response plus a successful three-channel repeat report. The basic Discord collection → rule match → private report path passed. Remaining live checks include pause/resume, same-channel repetition, edits/deletes, authorization and restart behavior. **JEV is deferred because TypeSafe access is pending; its flag remains off.** AI and enforcement stay disabled. See [live pilot checks](docs/live-pilot.md#remaining-code-only-pilot-checks), [JEV deferral and future setup](docs/jev.md), and [integration evidence](docs/integration.md).
 
 ## Offline fixture flow
 
@@ -86,12 +86,12 @@ The CLI prepares report payloads without sending. The optional live adapter reco
 
 ## Next milestones
 
-1. Install the disabled pilot plugin in the verified Hermes profile and confirm Message Content Intent in the Developer Portal.
-2. Activate only the custom moderation platform and complete live tests for ordinary messages, edits, private command authorization, reconnects, and zero-inference private reports.
-3. Optionally enable the implemented JEV shadow worker after the baseline test; review its local results before considering report annotations or moderator feedback.
-4. Design version-bound approvals and narrowly scoped warnings/single-message deletion before any enforcement. Production expansion requires its own authorization.
+1. Finish the [remaining code-only live checks](docs/live-pilot.md#remaining-code-only-pilot-checks) in the three test channels and `bot-mod`; record each observed result.
+2. Observe the approved test channels and review false positives, grouping and report clarity before tuning thresholds or scoped crosspost exceptions.
+3. Consider a separately scoped production-channel pilot after the live checks are complete. Enforcement remains unimplemented.
+4. Resume JEV later when TypeSafe access is available and the operator explicitly chooses to configure it. Keep the flag off meanwhile.
 
-The offline work advances part of Phase 5 while Phase 4 integration verification remains open; it does not complete the live phases. Protected-role enforcement, AI-generated rule candidates, review buttons, and action reconciliation remain future work.
+The successful repeat report proves the basic path, not every integration case or all live phases. Protected-role enforcement, general Hermes conversation, AI-generated rule candidates, review buttons, and action reconciliation remain future work.
 
 ## Development and documentation
 
@@ -101,6 +101,6 @@ python3 -m unittest discover -s tests -v
 
 The inactive [CI template](docs/ci-workflow.yml) runs the tests and fixture commands on Python 3.11, 3.12, and 3.13, with read-only repository permissions and no secrets. The 109 core/setup tests pass on Python 3.11.16 and 3.12.3; 23 additional integration tests use the real c1488 Hermes source and discord.py 2.7.1 with network edges mocked. Those integration tests are separate from the CI template and do not constitute a live gateway test; GitHub CI is not enabled yet because the current GitHub CLI login lacks the separate `workflow` scope. Once authorized, move the template to `.github/workflows/ci.yml`. See [operations](docs/operations.md), [recovery](docs/recovery.md), and [integration](docs/integration.md).
 
-[BUILD_PLAN.md](docs/BUILD_PLAN.md) retains the historical planning baseline with dated additions. Section 10.6 records the original JEV proposal; section 10.7 records the selected incident-only shadow implementation. It is disabled until explicitly configured. [JEV instructions](docs/jev.md) cover API keys, budgets, and activation. Its original status statements and local workstation links are preserved; this README and the operations guide describe current implementation status. It also records feature ideas from Sentinel AI, Defender/Warden, Zeppelin, Modcord, and Omnicord. This initial core is independently implemented; no third-party bot source has been imported.
+[BUILD_PLAN.md](docs/BUILD_PLAN.md) retains the historical planning baseline with dated additions. Section 10.6 records the original JEV proposal; section 10.7 records the selected incident-only shadow implementation. Section 10.8 records the live baseline result and the decision to defer JEV with its flag off. [JEV instructions](docs/jev.md) cover API keys, budgets, and activation. Its original status statements and local workstation links are preserved; this README and the operations guide describe current implementation status. It also records feature ideas from Sentinel AI, Defender/Warden, Zeppelin, Modcord, and Omnicord. This initial core is independently implemented; no third-party bot source has been imported.
 
 Project licensing has not yet been selected. Keep the repository private pending the owner's publishing and licensing decision.
