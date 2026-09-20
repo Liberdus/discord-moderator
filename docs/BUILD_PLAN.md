@@ -867,3 +867,19 @@ Offline automated tests cover default-off isolation, schema migration, response 
 6. Review report clarity, duplicate handling and false positives during a short observation period in the approved test channels. Tune repeat thresholds and narrowly scoped approved-crosspost exceptions only from observed cases. Record results before considering a separately scoped production-channel pilot.
 
 The detailed owner-run checks and expected outputs are in repository `docs/live-pilot.md`. JEV activation, broader semantic scanning, general Hermes chat, and enforcement remain separate later work. This checkpoint records the user's supplied output; no Discord messages, profile changes, provider calls, or restarts were performed while updating the documentation.
+
+
+### 10.9 Pause/resume command results — September 20, 2026
+
+The operator supplied this live sequence from `bot-mod`:
+
+- `!mod pause` returned `paused`, `Connected: True`, zero working messages, one retained incident, and no pending or uncertain reports.
+- `!mod resume` returned `report_only`, still connected, with zero working messages and the same retained incident before new detection.
+- A subsequent private report recorded incident `715a93e021a74959a6e812bfa9ed256a`, revision 1, `cross_channel_repeat`, author `977263877391794217`, and three observed copies linked to the three approved test channels.
+- Both command responses showed `JEV: off / off`, `AI attempts: 0`, and enforcement disabled. Coverage resets stayed at 2 with `reconnect` as the last recorded gap.
+
+**Confirmed from the supplied output:** authorized pause/resume state transitions and successful reporting after resume. Zero working messages at the transitions and one retained incident are expected: pause/resume resets current detection evidence while keeping incident history. Manual pause/resume does not increment the transport coverage-gap counter.
+
+No report appears between the two commands in the supplied excerpt. The test-channel posts made during the paused interval were not included, so suppression of a deliberately posted paused pattern is not separately confirmed by this excerpt. Keep that distinction in the acceptance record; it does not block proceeding with the other independent tests.
+
+**Next test:** post `Liberdus single-channel spam test.` four times in `bot-test-1` within 30 seconds, using the same account and plain text. Expect one new private report with `Rule: same_channel_repeat` and four observed copies. JEV remains deferred/off. Remaining cases include edits/deletes, authorization boundaries, and restart recovery. This update records operator evidence only; no profile changes, restart, Discord posts or provider calls were made.

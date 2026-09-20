@@ -121,7 +121,7 @@ Keep JEV off, AI/enforcement disabled, and the approved scope unchanged. Use the
 
 | Check | Action in approved test scope | Expected result |
 | --- | --- | --- |
-| Pause/resume | Run the sequence below. | No new incident/report from messages received while paused; new messages after resume can trigger a report. |
+| Pause/resume | State changes and a new report after resume are operator-confirmed; see the checkpoint below. | Paused-pattern suppression still needs explicit confirmation that the paused test messages were posted without a report. |
 | Same-channel repetition | Post `Liberdus single-channel spam test.` four times in `bot-test-1` within 30 seconds. | One `same_channel_repeat` incident and a private report. |
 | Edited evidence | Create a fresh three-channel incident, then edit one copy to different text before the 120-second window closes. Run `!mod incident NEW_ID` in `bot-mod`. | The current incident is withdrawn when fewer than three matching channels remain, or expired if the time window elapsed. The original report remains unchanged. |
 | Deleted evidence | Delete one of your disposable test messages, then inspect `!mod status`. | A coverage reset with `deleted_message`; current detection evidence is cleared. Already-delivered reports remain historical. |
@@ -137,4 +137,12 @@ Start with pause/resume:
 4. Post `Liberdus resumed moderation test.` once in each of the three test channels within 120 seconds. Expect a new private `cross_channel_repeat` report.
 5. Send `!mod status`: JEV should still be `off / off`, AI attempts zero, and enforcement disabled. Record the observed result before proceeding to the other checks.
 
-All rows in this remaining-checks table are pending until operator evidence is recorded. After they pass, use a short observation period in the approved test channels to review false positives and report usefulness. Adjust thresholds or explicitly scoped announcement exceptions from those observations. A broader channel pilot and any enforcement implementation are later decisions; TypeSafe access is not a prerequisite for the current work.
+Unconfirmed expectations in this table remain pending; the checkpoints record the operator evidence received so far. After they pass, use a short observation period in the approved test channels to review false positives and report usefulness. Adjust thresholds or explicitly scoped announcement exceptions from those observations. A broader channel pilot and any enforcement implementation are later decisions; TypeSafe access is not a prerequisite for the current work.
+
+## Pause/resume results recorded — September 20, 2026
+
+The supplied `bot-mod` transcript shows `!mod pause` returning `paused`, followed by `!mod resume` returning `report_only`. Both responses are connected, preserve one historical incident, and show zero current messages. A new three-channel report then arrives: incident `715a93e021a74959a6e812bfa9ed256a`, revision 1, rule `cross_channel_repeat`, author `977263877391794217`, three copies.
+
+This confirms command state transitions and detection/reporting after resume. Keeping the old incident while clearing working messages is expected. The unchanged coverage-gap count of 2 is also expected: manual pause/resume does not increment that transport counter. JEV remains off with zero AI attempts and disabled enforcement in both responses.
+
+The supplied excerpt contains no report between pause and resume, but does not include the paused test-channel posts. Confirming that those messages were actually posted with no resulting report would complete the suppression portion of this test. Other checks can proceed independently. Next: send `Liberdus single-channel spam test.` four times in `bot-test-1` within 30 seconds; expect one private `same_channel_repeat` report with four copies.
