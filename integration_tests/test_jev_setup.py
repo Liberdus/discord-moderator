@@ -43,6 +43,16 @@ class SetupTests(unittest.TestCase):
         configure(self.profile, "off")
         self.assertFalse(Config.from_file(self.policy).ai_enabled)
 
+    def test_actions_setup_preserves_budget_scope_and_leaves_runtime_flags_unset(self):
+        configure(self.profile, "screen")
+        before = Config.from_file(self.policy)
+        result = configure(self.profile, "actions")
+        after = Config.from_file(self.policy)
+        self.assertEqual(after, replace(before, actions_enabled=True))
+        self.assertEqual(result["configured"], "actions")
+        self.assertFalse((self.profile / "state/moderation.sqlite3").exists())
+        self.assertFalse((self.profile / ".env").exists())
+
     def test_screening_setup_preserves_scope_and_uses_separate_fixed_trial_allowance(self):
         result = configure(self.profile, "screen")
         updated = Config.from_file(self.policy)
@@ -70,7 +80,7 @@ class SetupTests(unittest.TestCase):
         (self.profile.parent.parent / "config.yaml").write_text("platforms:\n  discord:\n    enabled: false\n")
         manifest = self.profile / "plugins/liberdus-moderator/plugin.yaml"
         manifest.parent.mkdir(parents=True)
-        manifest.write_text("name: liberdus-moderator\nversion: 0.4.2\n")
+        manifest.write_text("name: liberdus-moderator\nversion: 0.5.0\n")
         (self.profile / "state").mkdir()
         lock = self.profile / "state/moderation.lock"
         lock.touch()
@@ -84,8 +94,8 @@ class SetupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"approved private"): configure_screening(self.profile)
         self.policy.write_text(policy_text(policy))
         manifest.write_text("name: liberdus-moderator\nversion: 0.3.5\n")
-        with self.assertRaisesRegex(ValueError,"0.4.2"): configure_screening(self.profile)
-        manifest.write_text("name: liberdus-moderator\nversion: 0.4.2\n")
+        with self.assertRaisesRegex(ValueError,"0.5.0"): configure_screening(self.profile)
+        manifest.write_text("name: liberdus-moderator\nversion: 0.5.0\n")
         configure_screening(self.profile)
         self.assertEqual(Config.from_file(self.policy).classifier.mode,"report_only")
         self.assertFalse((self.profile / "state/moderation.sqlite3").exists())

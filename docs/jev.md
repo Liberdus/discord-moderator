@@ -1,3 +1,5 @@
+Current action controls and deployment: [0.5.0 moderation actions](moderation-actions.md). The older report-only instructions and checkpoints below remain historical.
+
 # Optional JEV shadow evaluation
 
 **Current update — September 21, 2026:** version 0.4.0 adds opt-in [single-message JEV screening and private reports](message-screening.md), with a separate $1/day, $4 total trial allowance. The 0.3.5 staff review flow is owner-confirmed, including queue removal after Looks okay. Older dated sections below preserve their original mode, limits and deployment status; use the new runbook for screening activation.

@@ -1,4 +1,4 @@
-"""Version-pinned, report-only Hermes platform adapter. No conversational dispatch."""
+"""Version-pinned, scoped Hermes moderation adapter. No conversational dispatch."""
 
 import asyncio
 import contextlib
@@ -18,6 +18,8 @@ from hermes_cli.config import read_user_config_raw
 from hermes_constants import get_hermes_home
 
 from .commands import CommandRequest
+from .action_transport import ActionTransport, ACTION_BUTTONS, confirm_buttons
+from . import actions
 from .config import Config
 from .engine import Engine
 from .display import framed
@@ -30,11 +32,18 @@ REVIEW_BUTTONS = {"liberdus:assess:v1:" + label: label for label in ("needs-atte
 LEGACY_REVIEW_BUTTONS = {"liberdus:review:v1:" + label for label in ("promotion", "not-promotion", "unsure")}
 
 
-def assessment_buttons():
+def assessment_buttons(engine=None):
     view = discord.ui.View(timeout=None)
     labels = {"needs-attention": "Needs attention", "looks-okay": "Looks okay", "unsure": "Unsure"}
     for identity, label in REVIEW_BUTTONS.items():
         view.add_item(discord.ui.Button(label=labels[label], style=discord.ButtonStyle.secondary, custom_id=identity))
+    if engine is not None:
+        for identity, name in ACTION_BUTTONS.items():
+            label = {"delete": "Delete message(s)", "dismiss": "Dismiss", "timeout": "Timeout 10 min"}[name]
+            disabled = (name == "delete" and not actions.enabled(engine, "deletion")
+                        or name == "timeout" and not actions.enabled(engine, "timeout"))
+            view.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.secondary if name == "dismiss" else discord.ButtonStyle.danger,
+                                           custom_id=identity, row=1, disabled=disabled))
     return view
 
 VERIFIED_COMMIT = "c1488ac947c9bc33fd65ec464548dc9d8edd6122"
@@ -103,7 +112,7 @@ class PilotClient(discord.Client):
         await self.adapter.fail("callback_failure")
 
 
-class ModerationAdapter(BasePlatformAdapter):
+class ModerationAdapter(ActionTransport, BasePlatformAdapter):
     def __init__(self, config):
         super().__init__(config, Platform(PLATFORM))
         self.client = None
@@ -112,6 +121,8 @@ class ModerationAdapter(BasePlatformAdapter):
         self.classifier = None
         self.processing_evidence = False
         self.classifier_candidates = set()
+        self.auto_delete_candidates = set()
+        self.action_deletions = set()
         self.queue = asyncio.Queue(maxsize=200)
         self.ready_event = asyncio.Event()
         self.generation = 0
@@ -275,6 +286,7 @@ class ModerationAdapter(BasePlatformAdapter):
     def coverage_gap(self, reason):
         self.generation += 1
         self.classifier_candidates.clear()
+        self.auto_delete_candidates.clear()
         while not self.queue.empty():
             self.queue.get_nowait()
             self.queue.task_done()
@@ -333,25 +345,40 @@ class ModerationAdapter(BasePlatformAdapter):
             self.enqueue("edit", (str(channel_id), int(message_id)))
 
     def deleted(self, guild_id, channel_id, message_ids):
+        if all(str(identity) in self.action_deletions for identity in message_ids):
+            return  # The bounded action batch invalidates coverage on completion.
         if self.in_scope(guild_id, channel_id) and str(channel_id) in self.policy.monitored_channel_ids:
             # A deleted message may still be queued and absent from SQLite. Reset
             # conservatively so queued evidence cannot resurrect it.
             self.coverage_gap("deleted_message")
 
     async def interaction_notice(self, interaction, content, *, deferred=False):
+        proposal = getattr(content, "proposal", None)
+        view = confirm_buttons(proposal) if proposal else None
         try:
-            content = framed(content)
-            sender = interaction.followup.send if deferred else interaction.response.send_message
-            await asyncio.wait_for(sender(content, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()), timeout=10)
+            if deferred:
+                sent = await asyncio.wait_for(interaction.followup.send(framed(content), ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(), view=view, wait=True), timeout=10)
+            else:
+                await asyncio.wait_for(interaction.response.send_message(framed(content), ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(), view=view), timeout=10)
+                sent = None
+            if proposal and sent is not None:
+                actions.bind(self.live.engine, proposal, str(sent.id))
         except Exception:
-            pass  # A confirmation failure never replays a stored review.
+            pass  # No mutation/replay after an uncertain confirmation delivery.
+        finally:
+            if view is not None:
+                view.stop()
 
     async def receive_review_click(self, interaction):
+        if await self.receive_action_confirmation(interaction):
+            return
         data = interaction.data
         if not isinstance(data, dict) or not isinstance(data.get("custom_id"), str):
             return
         if (interaction.type != discord.InteractionType.component or data.get("component_type") != 2
-                or data.get("custom_id") not in set(REVIEW_BUTTONS) | LEGACY_REVIEW_BUTTONS):
+                or data.get("custom_id") not in set(REVIEW_BUTTONS) | LEGACY_REVIEW_BUTTONS | set(ACTION_BUTTONS)):
             return
         message = interaction.message
         if (not self.in_scope(interaction.guild_id, interaction.channel_id)
@@ -365,7 +392,8 @@ class ModerationAdapter(BasePlatformAdapter):
             await self.interaction_notice(interaction, "These old buttons record content labels. Use !mod incident ID for the new staff assessment buttons.")
             return
         event = CommandRequest(str(interaction.guild_id), str(interaction.channel_id), str(interaction.user.id),
-                               "assess", arguments=(REVIEW_BUTTONS[data["custom_id"]],),
+                               ACTION_BUTTONS.get(data["custom_id"], "assess"),
+                               arguments=() if data["custom_id"] in ACTION_BUTTONS else (REVIEW_BUTTONS[data["custom_id"]],),
                                reply_to_message_id=str(message.id))
         if self.live.review_reply_target(event) is None:
             await self.interaction_notice(interaction, "Saved report link unavailable. Request a new !mod incident ID view.")
@@ -390,10 +418,14 @@ class ModerationAdapter(BasePlatformAdapter):
         if not self.online or self.closing:
             raise ValueError("Moderation transport is offline")
         channel = self.checked_channel(channel_id, sending=True)
-        view = assessment_buttons() if reviewable else None
+        proposal = getattr(content, "proposal", None)
+        view = confirm_buttons(proposal) if proposal else assessment_buttons(self.live.engine) if reviewable else None
         try:
-            return await asyncio.wait_for(channel.send(framed(content), allowed_mentions=discord.AllowedMentions.none(),
+            sent = await asyncio.wait_for(channel.send(framed(content), allowed_mentions=discord.AllowedMentions.none(),
                 nonce=nonce, suppress_embeds=True, silent=True, view=view), timeout=20)
+            if proposal:
+                actions.bind(self.live.engine, proposal, str(sent.id))
+            return sent
         finally:
             if view is not None:
                 # Interactions use PilotClient.on_interaction plus durable message bindings.
@@ -423,7 +455,7 @@ class ModerationAdapter(BasePlatformAdapter):
                     raise ValueError("Saved bot report unavailable")
                 self.checked_channel(event.channel_id, sending=True)
                 updated = self.live.render_snapshot(identity, revision)
-                view = assessment_buttons()
+                view = assessment_buttons(self.live.engine)
                 await asyncio.wait_for(message.edit(content=framed(updated), view=view, suppress=True,
                     allowed_mentions=discord.AllowedMentions.none()), timeout=5)
                 succeeded += 1
@@ -467,7 +499,11 @@ class ModerationAdapter(BasePlatformAdapter):
                         self.process_evidence(value)
                     elif kind == "screen_result":
                         if self.classifier is not None and self.policy.classifier.mode == "report_only":
-                            self.classifier.apply(value)
+                            identity = self.classifier.apply(value)
+                            if identity and actions.enabled(self.live.engine, "auto_delete"):
+                                self.auto_delete_candidates.add(identity)
+                    elif kind == "action_confirm":
+                        await self.handle_action_confirmation(value)
                     elif kind == "edit":
                         self.processing_evidence = True
                         try:
@@ -526,6 +562,7 @@ class ModerationAdapter(BasePlatformAdapter):
                             self.classifier.submit(sorted(self.classifier_candidates))
                             self.classifier_candidates.clear()
                         await self.flush_reports()
+                        await self.flush_automatic_actions()
                 finally:
                     self.queue.task_done()
         except asyncio.CancelledError:

@@ -179,7 +179,8 @@ def incident_view(engine, incident, revision=None):
     from .moderator_review import saved_review
     from .staff_review import saved_assessment, snapshot
     evidence = incident["evidence"] if revision is None else snapshot(engine, incident, revision)
-    view = {**incident, "revision": incident["revision"] if revision is None else revision,
+    from .actions import history
+    view = {**incident, "actions_enabled": engine.config.actions_enabled, "action_history": history(engine, incident["id"]), "revision": incident["revision"] if revision is None else revision,
             "latest_revision": incident["revision"], "evidence": evidence,
             "classification": saved_classification(engine, incident),
             "moderator_review": saved_review(engine, incident),
@@ -233,6 +234,11 @@ def format_incident(incident, *, details=False):
         if "revision" in classification:
             lines += [_field("Evaluated", f"Revision {classification['revision']}, {_age(classification['age_seconds'])}"),
                       _field("Evidence", classification["evidence_state"].upper())]
+    action_rows = incident.get("action_history", [])
+    if action_rows:
+        lines += ["", "ACTION RECORD", "-" * PANEL_WIDTH]
+        for row in action_rows[:2]:
+            lines.append(_field("Action", ("Auto " if row["automatic"] else "Staff ") + row["kind"] + ": " + row["outcome"]))
     body = "**Moderation review**\n```\n" + "\n".join(lines) + "\n```\n"
     footer = ""
     if assessment.get("reviewer_id"):
@@ -245,8 +251,9 @@ def format_incident(incident, *, details=False):
         footer += "*Possible concern only; link destinations not checked.*\n"
     footer += ("**Staff assessment - does this need attention?**\n"
                "Needs attention: possible issue. Looks okay: acceptable. Unsure: more context.\n"
-               f"*Records your assessment of revision {incident['revision']}; enforcement disabled; no new AI call.*\n"
-               "Pending reviews: `!mod pending`")
+               f"*Assessment of revision {incident['revision']}; no action; no new AI call.*\n"
+               "Pending reviews: `!mod pending`\n"
+               "Delete/Timeout need confirmation. Dismiss closes this review.")
     remaining = 1900 - units(body + footer)
     evidence = format_saved_box(incident.get("evidence_view", {}), incident, remaining)
     result = body + evidence + footer

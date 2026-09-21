@@ -325,6 +325,8 @@ class MessageScreener(ShadowClassifier):
             self.store.db.execute("UPDATE screening_attempts_v1 SET outcome='incident_capacity' WHERE key=?", (job.key,))
             self.bump("unchecked")
             self.state("incident_capacity")
+            identity = None
+        return identity
 
 
 def saved_screening(engine, incident):

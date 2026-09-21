@@ -74,6 +74,31 @@ def handle_command(engine: Engine, request: CommandRequest):
             with store.transaction():
                 store.set_setting("role_exemption_enabled", arguments == ("on",))
         result["data"] = engine.status()
+    elif name in ("deletion", "auto-delete", "timeout") and arguments in ((), ("on",), ("off",)):
+        if arguments == ("on",) and not config.actions_enabled:
+            return {**result, "ok": False, "error": "actions_disabled_in_policy"}
+        if arguments:
+            with store.transaction():
+                store.set_setting(name.replace("-", "_") + "_enabled", arguments == ("on",))
+                store.set_setting("action_epoch", store.get_setting("action_epoch", 0) + 1)
+        result["data"] = engine.status()
+    elif name in ("delete", "timeout") and len(arguments) in (2, 3):
+        from .actions import propose
+        try:
+            if name == "timeout" and len(arguments) != 2:
+                raise ValueError("Invalid timeout arguments")
+            result["data"] = propose(engine, arguments[0], arguments[1], name, request.user_id,
+                                     request.channel_id, arguments[2] if len(arguments) == 3 else None)
+        except (ValueError, KeyError, TypeError, sqlite3.Error) as error:
+            from .actions import ActionError
+            return {**result, "ok": False, "error": str(error) if isinstance(error, ActionError) else "action_unavailable_check_id_and_revision"}
+    elif name == "dismiss" and len(arguments) == 2:
+        from .staff_review import record_assessment
+        try:
+            result["data"] = record_assessment(engine, *arguments, "dismissed", reviewer_id=request.user_id)
+            store.set_setting("action_epoch", store.get_setting("action_epoch", 0) + 1)
+        except (ValueError, KeyError, TypeError, sqlite3.Error):
+            return {**result, "ok": False, "error": "dismissal_not_saved_check_id_and_revision"}
     elif name == "status" and not arguments:
         result["data"] = engine.status()
     elif name in ("pause", "resume") and not arguments:
@@ -89,6 +114,15 @@ def handle_command(engine: Engine, request: CommandRequest):
             if arguments == ("off",):
                 store.db.execute("UPDATE reports SET status='cancelled' WHERE status='pending' AND kind='log'")
         result["data"] = {"logs_enabled": arguments == ("on",)}
+    elif name == "actions" and len(arguments) == 1:
+        from .actions import history
+        from .evidence_view import validated_evidence
+        try:
+            incident = store.incident(arguments[0])
+            validated_evidence(config, incident)
+            result["data"] = {"id": incident["id"], "history": history(engine, incident["id"])}
+        except (ValueError, KeyError, TypeError, sqlite3.Error):
+            return {**result, "ok": False, "error": "action_history_unavailable"}
     elif name in ("incident", "explain") and len(arguments) == 1:
         incident = store.incident(arguments[0])
         if incident is None:

@@ -300,7 +300,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_three_buttons_store_labels_ephemerally_without_ai_or_rule_changes(self):
         await self.create_report()
         view = self.channel.send.call_args.kwargs["view"]
-        self.assertEqual([child.label for child in view.children], ["Needs attention", "Looks okay", "Unsure"])
+        self.assertEqual([child.label for child in view.children[:3]], ["Needs attention", "Looks okay", "Unsure"])
         self.assertTrue(view.is_persistent())
         self.assertTrue(view.is_finished())  # No unbounded per-message SDK callback cache.
         self.assertEqual(len(view.to_components()[0]["components"]), 3)
@@ -389,7 +389,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.side_effect = send_and_reconnect
         self.adapter.receive(self.message(309, 20, 98, "!mod incident " + identity))
         await self.drain()
-        self.assertEqual([child.label for child in self.channel.send.call_args.kwargs["view"].children],
+        self.assertEqual([child.label for child in self.channel.send.call_args.kwargs["view"].children[:3]],
                          ["Needs attention", "Looks okay", "Unsure"])
         self.assertGreater(self.adapter.store.incident(identity)["revision"], 1)
         # A fresh SDK client has no registered per-message views. Raw interaction
@@ -451,7 +451,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Untrusted fetched body", update["content"])
         self.assertTrue(update["suppress"])
         self.assertEqual(update["allowed_mentions"].to_dict()["parse"], [])
-        self.assertEqual([child.label for child in update["view"].children], ["Needs attention", "Looks okay", "Unsure"])
+        self.assertEqual([child.label for child in update["view"].children[:3]], ["Needs attention", "Looks okay", "Unsure"])
         self.assertEqual(pending_page(self.adapter.live.engine)["total"], 0)
         self.assertIn("Report display updated", click.followup.send.call_args.args[0])
         self.channel.send.assert_awaited_once()

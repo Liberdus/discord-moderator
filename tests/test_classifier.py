@@ -50,7 +50,7 @@ class ClassifierConfigTests(unittest.TestCase):
                         {"mode": "shadow"}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 ClassifierSettings(**changes)
-        for changes in ({"ai_enabled": False}, {"mode": "off"}, {"actions_enabled": True}):
+        for changes in ({"ai_enabled": False}, {"mode": "off"}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 replace(shadow_config(), **changes)
 

@@ -54,7 +54,7 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('https://discord.com/channels/1/10/100',text)
         self.assertIn('Sensitive request',text)
         kwargs = self.channel.send.call_args.kwargs
-        self.assertEqual(len(kwargs['view'].children),3)
+        self.assertEqual(len(kwargs['view'].children),6)
         self.assertEqual(kwargs['allowed_mentions'].to_dict()['parse'],[])
         self.assertTrue(kwargs['silent'])
         self.assertTrue(kwargs['suppress_embeds'])

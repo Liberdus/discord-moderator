@@ -1,3 +1,5 @@
+Current action controls and deployment: [0.5.0 moderation actions](moderation-actions.md). The older report-only instructions and checkpoints below remain historical.
+
 # JEV role exemption — 0.4.1
 
 The owner requested that members with Discord role **1302455329795342377** be exempt from message checks. In this JEV-screening context the exemption applies to **JEV only**. Deterministic repetition/domain rules and authorized moderator commands remain active. It does not grant moderator-command privileges or change any Discord permissions.

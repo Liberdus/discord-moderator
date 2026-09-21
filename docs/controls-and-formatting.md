@@ -1,3 +1,5 @@
+Current action controls and deployment: [0.5.0 moderation actions](moderation-actions.md). The older report-only instructions and checkpoints below remain historical.
+
 # Private controls and message layout — 0.4.2
 
 Run in the existing `hermes` terminal:

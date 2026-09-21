@@ -9,7 +9,7 @@ from .classifier import encoded
 from .evidence_view import validated_evidence
 from .models import validate_id, validate_timestamp
 
-LABELS = {"needs_attention": "Needs attention", "looks_okay": "Looks okay", "unsure": "Unsure"}
+LABELS = {"needs_attention": "Needs attention", "looks_okay": "Looks okay", "unsure": "Unsure", "dismissed": "Dismissed"}
 TABLE = "staff_assessments_v1"
 SCHEMA_KEY = "staff_assessment_schema_version"
 MAX_ASSESSMENTS = 32
@@ -57,7 +57,7 @@ def _view(engine, incident, row, target_digest):
     return {"state": "current" if current else "historical", "applies_to_snapshot": applies,
             "label": row["label"], "reviewer_id": row["reviewer_id"], "reviewed_at": at,
             "revision": row["revision"], "sequence": row["sequence"],
-            "complete": applies and row["label"] == "looks_okay"}
+            "complete": applies and row["label"] in ("looks_okay", "dismissed")}
 
 
 def saved_assessment(engine, incident, revision=None):

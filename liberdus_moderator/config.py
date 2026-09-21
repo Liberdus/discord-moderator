@@ -1,4 +1,4 @@
-"""Fail-closed, versioned TOML configuration for report-only moderation and optional shadow classification."""
+"""Fail-closed TOML configuration for moderation detection and explicitly enabled actions."""
 
 from __future__ import annotations
 
@@ -185,14 +185,14 @@ class Config:
         if not isinstance(self.policy_version, str) or not self.policy_version.strip() or len(self.policy_version) > 128 or not self.policy_version.isprintable():
             raise ValueError("policy_version must be nonempty printable text of at most 128 codepoints")
         if not isinstance(self.mode, str) or self.mode not in ("off", "report_only"):
-            raise ValueError("mode must be off or report_only; enforcement is not implemented")
+            raise ValueError("detection mode must be off or report_only")
         for name in ("logs_enabled", "ai_enabled", "actions_enabled"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be a boolean")
         if not isinstance(self.classifier, ClassifierSettings):
             raise ValueError("classifier must use validated settings")
-        if self.actions_enabled:
-            raise ValueError("Enforcement is not implemented")
+        if self.actions_enabled and (self.schema_version != 2 or self.mode != "report_only"):
+            raise ValueError("Actions require schema 2 and report_only detection")
         if self.schema_version == 1 and (self.ai_enabled or self.classifier != ClassifierSettings()):
             raise ValueError("Schema 1 remains code-only; migrate explicitly to schema 2 for JEV")
         if self.ai_enabled != (self.classifier.mode != "off"):
