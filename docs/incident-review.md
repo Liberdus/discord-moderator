@@ -1,5 +1,7 @@
 # Saved JEV results in private incident replies
 
+**Current update, September 21, 2026:** 0.3.4 adds moderator review buttons, saved message previews and explicit source links. The [0.3.4 runbook](moderator-review.md) is the current installation and verification guide; deployment is pending. The 0.3.3 behavior and completed deployment below are retained as historical reference. New incident replies record a revision binding in addition to the existing command receipt, and can show saved evidence outside the metadata panel.
+
 The owner confirmed the **0.3.2** lookup live in `bot-mod`: the quoted-warning incident returned its saved label, confidence 1.00, evaluated revision 1 and historical status while the incident was revision 2, `needs_revalidation`. The supplied reply said no new AI call; no separate before/after accounting transcript was supplied.
 
 Version **0.3.3** gives `!mod incident ID` and its `!mod explain ID` alias a narrow, aligned layout. The owner has supplied the new formatted reply, confirming the live incident display. The lookup and formatting step is complete; no repeat update or provider evaluation is needed.
@@ -114,7 +116,7 @@ If the labels prove useful, a later selected change can add clearly marked conte
 - Existing rendering checks also verify ASCII panel width, balanced code fences and intact incident IDs. The example is 593 characters, with a maximum panel width of 32; this is a local text preview, not a live Discord screenshot.
 - The update checks staged code in an isolated temporary profile, runs the fixed nine-case self-test, and retains the previous code for rollback. No real profile, token, live provider request or gateway was accessed during development. The owner confirmed the 0.3.2 lookup and subsequently supplied the 0.3.3 formatted incident reply. The supplied evidence is pasted reply text, rather than a device screenshot or separate deployment log.
 
-Rebuild bundles from the repository and its validated local policy if `/tmp` was cleared:
+Historical 0.3.3 build commands below require the reviewed 0.3.3 source checkout. Do not run them against current source or overwrite the preserved 0.3.3 artifacts. For the new release, follow the [current update guide](moderator-review.md).
 
 ```bash
 python3 scripts/build_pilot_bundle.py \

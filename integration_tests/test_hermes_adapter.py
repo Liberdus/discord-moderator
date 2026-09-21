@@ -197,11 +197,234 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Label     : Quoted warning", args[0])
         self.assertEqual(args[0].count("```"), 2)
         self.assertIn("no new AI call", args[0])
-        self.assertNotIn("Repeated test message", args[0])
+        self.assertIn("Repeated test message", args[0])
+        self.assertIn("Open message 1", args[0])
         self.assertLess(len(args[0]), 1900)
         self.assertEqual(kwargs["allowed_mentions"].to_dict()["parse"], [])
         provider.assert_awaited_once()
         await worker.close()
+
+    async def test_private_report_reply_records_human_label_and_lookup_shows_evidence(self):
+        from liberdus_moderator.moderator_review import TABLE
+        for index, channel in enumerate((10, 11, 12)):
+            self.adapter.receive(self.message(100+index, channel,
+                content="Repeated saved message mentioning @everyone and a quoted offer."))
+        await self.drain()
+        identity = self.adapter.store.incidents()[0]["id"]
+        reference = discord.MessageReference(message_id=700, channel_id=20, guild_id=1)
+        reply = self.message(303, 20, 98, "!mod review not-promotion", reference=reference)
+        self.channel.send.reset_mock()
+        self.channel.send.return_value = SimpleNamespace(id=701)
+        with patch("liberdus_moderator.hermes_adapter.current_secret_scope", side_effect=AssertionError("no key")), \
+             patch("liberdus_moderator.jev.evaluate", side_effect=AssertionError("no AI")):
+            self.adapter.receive(reply)
+            await self.drain()
+            self.assertIn("Moderator review saved", self.channel.send.call_args.args[0])
+            self.adapter.next_command_at = 0
+            self.adapter.receive(reply)
+            await self.drain()
+            self.assertEqual(self.channel.send.await_count, 1)
+            self.adapter.next_command_at = 0
+            self.adapter.receive(self.message(304, 20, 98, "!mod incident " + identity))
+            await self.drain()
+        text = self.channel.send.call_args.args[0]
+        self.assertIn("Not promotion", text)
+        self.assertIn("MODERATOR REVIEW", text)
+        self.assertIn("Repeated saved message", text)
+        self.assertNotIn("@everyone", text)
+        self.assertIn("https://discord.com/channels/1/10/100", text)
+        self.assertEqual(self.channel.send.call_args.kwargs["allowed_mentions"].to_dict()["parse"], [])
+        self.assertTrue(self.channel.send.call_args.kwargs["suppress_embeds"])
+        self.assertEqual(self.adapter.store.db.execute(f"SELECT count(*) FROM {TABLE}").fetchone()[0], 1)
+        self.assertEqual(self.adapter.live.status(True)["ai_attempts"], 0)
+
+    async def test_review_reply_rejects_unauthorized_wrong_reference_and_preserves_saved_jev(self):
+        from dataclasses import replace
+        from liberdus_moderator.classifier import ShadowClassifier, RUBRIC
+        from liberdus_moderator.config import ClassifierSettings
+        self.adapter.policy = replace(self.adapter.policy, schema_version=2, ai_enabled=True,
+            classifier=ClassifierSettings(mode="shadow", max_daily_calls=10, max_total_calls=10,
+                daily_budget_microusd=50000, total_budget_microusd=50000))
+        self.adapter.live = LiveSession(Engine(self.adapter.policy, self.adapter.store))
+        provider = AsyncMock(return_value={"model": "jev-1.13.0", "answers": {"context": {
+            "type": "choice", "choice": "promotion", "confidence": 0.8,
+            "probabilities": {key: 0.8 if key == "promotion" else 0.05 for key in RUBRIC["criteria"]}}},
+            "usage": {"input_tokens": 500, "output_tokens": 40}})
+        worker = ShadowClassifier(self.adapter.live.engine, provider)
+        for i, channel in enumerate((10, 11, 12)):
+            self.adapter.receive(self.message(100+i, channel))
+        await self.drain()
+        identity = self.adapter.store.incidents()[0]["id"]
+        await worker.evaluate_one(identity)
+        before = [tuple(row) for row in self.adapter.store.db.execute("SELECT * FROM classifier_attempts")]
+        self.channel.send.reset_mock()
+        for user, channel, guild, kind in ((50, 20, 1, discord.MessageReferenceType.default),
+                                           (98, 10, 1, discord.MessageReferenceType.default),
+                                           (98, 20, 2, discord.MessageReferenceType.default),
+                                           (98, 20, 1, discord.MessageReferenceType.forward)):
+            reference = discord.MessageReference(message_id=700, channel_id=channel, guild_id=guild, type=kind)
+            self.adapter.receive(self.message(305, 20, user, "!mod review not-promotion", reference=reference))
+        await self.drain()
+        self.channel.send.assert_not_awaited()
+        with patch("liberdus_moderator.jev.evaluate", side_effect=AssertionError("no extra AI")):
+            self.adapter.receive(self.message(306, 20, 98, "!mod review " + identity + " 1 not-promotion"))
+            await self.drain()
+        self.assertIn("Not promotion", self.channel.send.call_args.args[0])
+        self.assertEqual(before, [tuple(row) for row in self.adapter.store.db.execute("SELECT * FROM classifier_attempts")])
+        self.assertEqual(self.adapter.live.status(True)["ai_attempts"], 1)
+        provider.assert_awaited_once()
+        await worker.close()
+
+    def interaction(self, identity=800, label="promotion", **updates):
+        values = dict(id=identity, type=discord.InteractionType.component,
+            data={"component_type": 2, "custom_id": "liberdus:review:v1:" + label},
+            guild_id=1, channel_id=20, user=SimpleNamespace(id=98, bot=False),
+            message=SimpleNamespace(id=700, author=SimpleNamespace(id=99), channel=SimpleNamespace(id=20)),
+            response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()))
+        values.update(updates)
+        return SimpleNamespace(**values)
+
+    async def create_report(self):
+        for index, channel in enumerate((10, 11, 12)):
+            self.adapter.receive(self.message(100+index, channel))
+        await self.drain()
+        return self.adapter.store.incidents()[0]["id"]
+
+    def reviews(self):
+        from liberdus_moderator.moderator_review import TABLE
+        if not self.adapter.store.db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (TABLE,)).fetchone():
+            return []
+        return list(self.adapter.store.db.execute(f"SELECT * FROM {TABLE} ORDER BY sequence"))
+
+    async def test_three_buttons_store_labels_ephemerally_without_ai_or_rule_changes(self):
+        await self.create_report()
+        view = self.channel.send.call_args.kwargs["view"]
+        self.assertEqual([child.label for child in view.children], ["Promotion", "Not promotion", "Unsure"])
+        self.assertTrue(view.is_persistent())
+        self.assertTrue(view.is_finished())  # No unbounded per-message SDK callback cache.
+        self.assertEqual(len(view.to_components()[0]["components"]), 3)
+        before = [tuple(row) for row in self.adapter.store.db.execute("SELECT * FROM incident_versions")]
+        with patch("liberdus_moderator.jev.evaluate", side_effect=AssertionError("No provider call")), \
+             patch("liberdus_moderator.hermes_adapter.current_secret_scope", side_effect=AssertionError("No key")):
+            for index, label in enumerate(("promotion", "not-promotion", "unsure")):
+                self.adapter.next_command_at = 0
+                interaction = self.interaction(800+index, label)
+                await self.adapter.receive_review_click(interaction)
+                await self.drain()
+                interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+                self.assertIn("Moderator review saved", interaction.followup.send.call_args.args[0])
+                self.assertTrue(interaction.followup.send.call_args.kwargs["ephemeral"])
+                self.assertEqual(interaction.followup.send.call_args.kwargs["allowed_mentions"].to_dict()["parse"], [])
+        self.assertEqual([row["label"] for row in self.reviews()], ["promotion", "not_promotion", "unsure"])
+        self.assertEqual(before, [tuple(row) for row in self.adapter.store.db.execute("SELECT * FROM incident_versions")])
+        self.channel.send.assert_awaited_once()  # Click acknowledgement is private to the clicker.
+        self.assertEqual(self.adapter.live.status(True)["ai_attempts"], 0)
+
+    async def test_duplicate_click_and_confirmation_failure_never_replay_review(self):
+        await self.create_report()
+        first = self.interaction()
+        first.followup.send.side_effect = TimeoutError()
+        await self.adapter.receive_review_click(first)
+        await self.drain()
+        self.adapter.next_command_at = 0
+        duplicate = self.interaction()
+        await self.adapter.receive_review_click(duplicate)
+        await self.drain()
+        self.assertEqual(len(self.reviews()), 1)
+        self.assertIn("already processed", duplicate.followup.send.call_args.args[0])
+
+    async def test_button_authentication_and_known_message_binding_are_required(self):
+        await self.create_report()
+        for changes in ({"user": SimpleNamespace(id=50, bot=False)},
+                        {"user": SimpleNamespace(id=98, bot=True)},
+                        {"guild_id": 2}, {"channel_id": 10},
+                        {"message": self.message(700, 20, 50)},
+                        {"message": self.message(700, 10, 99)},
+                        {"message": self.message(999, 20, 99)}, {"message": None}):
+            with self.subTest(changes=changes):
+                interaction = self.interaction(**changes)
+                await self.adapter.receive_review_click(interaction)
+                await self.drain()
+                interaction.response.defer.assert_not_awaited()
+                interaction.response.send_message.assert_awaited_once()
+                self.assertTrue(interaction.response.send_message.call_args.kwargs["ephemeral"])
+        foreign = self.interaction(data={"component_type": 2, "custom_id": "liberdus:review:v1:ban"})
+        await self.adapter.receive_review_click(foreign)
+        foreign.response.defer.assert_not_awaited()
+        self.assertEqual(self.reviews(), [])
+
+    async def test_no_review_when_acknowledgement_fails_or_connection_changes(self):
+        await self.create_report()
+        failed = self.interaction()
+        failed.response.defer.side_effect = TimeoutError()
+        await self.adapter.receive_review_click(failed)
+        await self.drain()
+        changed = self.interaction(801)
+        async def reconnect(**kwargs):
+            self.adapter.coverage_gap("reconnect")
+        changed.response.defer.side_effect = reconnect
+        await self.adapter.receive_review_click(changed)
+        await self.drain()
+        self.assertEqual(self.reviews(), [])
+        self.assertIn("Connection changed", changed.followup.send.call_args.args[0])
+
+    async def test_review_rechecks_private_channel_after_deferral(self):
+        await self.create_report()
+        interaction = self.interaction()
+        async def make_public(**kwargs):
+            self.channel.permissions_for.side_effect = lambda member: SimpleNamespace(
+                administrator=False, view_channel=True, read_message_history=True, send_messages=True)
+        interaction.response.defer.side_effect = make_public
+        await self.adapter.receive_review_click(interaction)
+        await self.drain()
+        self.assertEqual(self.reviews(), [])
+        self.assertIn("Private review channel unavailable", interaction.followup.send.call_args.args[0])
+
+    async def test_incident_buttons_capture_displayed_revision_and_new_client_handles_old_click(self):
+        identity = await self.create_report()
+        async def send_and_reconnect(*args, **kwargs):
+            self.adapter.coverage_gap("reconnect")
+            return SimpleNamespace(id=701)
+        self.channel.send.side_effect = send_and_reconnect
+        self.adapter.receive(self.message(309, 20, 98, "!mod incident " + identity))
+        await self.drain()
+        self.assertEqual([child.label for child in self.channel.send.call_args.kwargs["view"].children],
+                         ["Promotion", "Not promotion", "Unsure"])
+        self.assertGreater(self.adapter.store.incident(identity)["revision"], 1)
+        # A fresh SDK client has no registered per-message views. Raw interaction
+        # dispatch still resolves the persisted message -> displayed revision binding.
+        client = PilotClient(self.adapter)
+        self.adapter.next_command_at = 0
+        interaction = self.interaction(message=self.message(701, 20, 99))
+        await client.on_interaction(interaction)
+        await self.drain()
+        await client.close()
+        self.assertEqual(self.reviews()[0]["revision"], 1)
+        self.assertIn("revision: 1 (historical)", interaction.followup.send.call_args.args[0])
+
+    async def test_busy_and_expired_review_clicks_do_not_write(self):
+        await self.create_report()
+        self.adapter.worker.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await self.adapter.worker
+        self.adapter.queue = asyncio.Queue(maxsize=1)
+        self.adapter.queue.put_nowait((self.adapter.generation, "unused", None))
+        busy = self.interaction()
+        await self.adapter.receive_review_click(busy)
+        busy.response.defer.assert_not_awaited()
+        self.assertIn("busy", busy.response.send_message.call_args.args[0])
+        self.adapter.queue.get_nowait()
+        self.adapter.queue.task_done()
+        expired = self.interaction(801)
+        await self.adapter.receive_review_click(expired)
+        generation, kind, (interaction, event, _) = self.adapter.queue.get_nowait()
+        self.adapter.queue.task_done()
+        self.adapter.queue.put_nowait((generation, kind, (interaction, event, 0)))
+        self.adapter.worker = asyncio.create_task(self.adapter.run_worker())
+        await self.drain()
+        self.assertEqual(self.reviews(), [])
+        self.assertIn("Review not saved", expired.followup.send.call_args.args[0])
 
     async def test_edit_fetch_failure_records_gap_and_discards_pending_window(self):
         self.adapter.receive(self.message())

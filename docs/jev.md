@@ -4,6 +4,8 @@
 
 Implemented in 0.3.0; **disabled in the installation bundle**. The chosen scope is existing code-rule incidents only. This does not scan every message, create new incidents, suppress rule reports, annotate Discord reports, invoke Hermes's model/tools, or perform moderation actions. `report_only` classifier annotations remain future work and are rejected by configuration today.
 
+**Human review update prepared — September 21, 2026:** 0.3.4 adds [private review buttons and saved message evidence](moderator-review.md). A moderator can record Promotion / Not promotion / Unsure beside JEV's unchanged saved answer. This creates local review evidence, with no provider call, automatic training, report suppression or enforcement. The live rubric remains context-v1; precedence-v2 remains experimental. Deployment and the live button check are pending.
+
 ## Integration review before implementation — September 20, 2026
 
 | Option reviewed | What it provides | Decision for `liberdus-mod` |
@@ -238,4 +240,4 @@ The selected next step is implemented as a [standalone JEV batch runner](jev-bat
 
 Tests use synthetic events and mocked provider/Discord network edges. They cover default-off key isolation, strict configuration/response validation, immutable evidence binding, budgets/restart accounting, cancellation, stale results, private key storage, and uninterrupted rule reports while a provider call waits. No paid JEV call or live Discord acceptance test was run during implementation.
 
-Before relying on JEV judgments beyond shadow mode, compare labeled legitimate announcements, promotional spam, quoted scam warnings, ordinary messages, multilingual text and adversarial instructions. Review disagreements and confidence calibration with moderators. Current code only sends incidents already caught by rules, so it cannot measure or fix abuse the rules never flag. Report annotations, broader scanning, moderator feedback, and enforcement are separate future changes.
+Before relying on JEV judgments beyond shadow mode, compare labeled legitimate announcements, promotional spam, quoted scam warnings, ordinary messages, multilingual text and adversarial instructions. Review disagreements and confidence calibration with moderators. Current code only sends incidents already caught by rules, so it cannot measure or fix abuse the rules never flag. Human feedback is implemented in the pending 0.3.4 update; automatic use of that feedback, report annotations, broader scanning and enforcement remain future decisions.

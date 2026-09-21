@@ -4,6 +4,8 @@ Status: September 20, 2026. This guide describes the offline CLI and core. The o
 
 The optional [JEV batch runner](jev-batch.md) is a separate owner-run utility for real provider evaluation of synthetic examples. It adds a batch-results table and shares the existing classifier budget counters in the profile database. It does not modify moderation evidence, policy or reports and needs no gateway restart. The owner completed the baseline with ten valid responses, nine expected-label matches and one mixed-purpose review; the runbook records the results. The owner also completed the [precedence-v2 candidate suite](jev-batch.md#precedence-v2-results--september-20-2026) with five valid responses, four matches and an unresolved ambiguous fragment. The latest supplied shared accounting reports 18 attempts. If all 18 occurred within one UTC day, their $0.049554 reservation leaves insufficient room for another attempt under the $0.05 daily cap; the total alone does not reveal the daily counter. Candidate results remain separate from live incidents, the live rubric remains context-v1 in shadow mode, and no plugin replacement or restart is needed.
 
+**Prepared 0.3.4 update, September 21:** [review buttons and saved message previews](moderator-review.md) are implemented; live installation/checks remain pending. The update keeps JEV context-v1 in shadow mode and enforcement disabled. The no-restart statement above applies to the completed batch comparison, not this plugin update.
+
 ## Environment and configuration
 
 Use Python 3.11 or newer. The core and fixture CLI use the Python standard library; the optional adapter uses the verified existing Hermes and Discord libraries. Run the documented commands from the repository root or install the package in a virtual environment. `python3 -m liberdus_moderator --help` lists local CLI commands.
@@ -53,13 +55,16 @@ The fixtures are local test inputs, **not registered Discord slash commands**. I
 | `status` | Show configured/paused state and record counts. |
 | `pause` | Persist a pause, clear the current message window, invalidate open incidents, and cancel pending report payloads while retaining incident history. |
 | `resume` | Resume within the configured mode with a fresh message window because edits may have been missed during the pause; does not change the enforcement or AI feature flags (already-configured shadow evaluation can resume). |
-| `incident` | Inspect the incident ID in `arguments`, including a saved JEV result and its current/historical evidence status in 0.3.2. No new AI call. |
+| `incident` | Inspect a saved incident, JEV result and human review with revision status. Version 0.3.4 adds a safe saved-text preview, source links and live review buttons. No new AI call. |
+| `review` | Append a human label for `arguments: ["INCIDENT_ID", "REVISION", "LABEL"]` (`promotion`, `not-promotion`, or `unsure`). The live buttons or reply commands select the recorded message revision. Does not change rule/JEV decisions or enable actions. |
 | `logs` | Use `arguments: ["on"]` or `["off"]` to persist optional log-payload generation; enabling requires a configured log channel, and disabling cancels pending log payloads. No Discord posting occurs. |
 | `explain` | Return saved reasons/evidence and the same stored JEV view as `incident`, without changing classifier counters or requesting another evaluation. |
 | `selftest` | Run nine fixed synthetic checks in separate in-memory stores; no arguments, live evidence changes, provider calls, or public actions. See [coverage and deployment](selftest.md). |
 | `approve` | Unsupported; no enforcement path exists. |
 
 For an incident request, set `"command": "explain"` and `"arguments": ["INCIDENT_ID_FROM_OUTPUT"]`. Command authorization requires the configured guild, command channel, and an allowed user or role together. An operator posting in a public/monitored channel cannot administer the harness through that channel.
+
+Version 0.3.4 persists successful incident-view message bindings in `review_prompt_links` (up to 5,000) and human annotations in `moderator_reviews_v1` (up to 32 per incident). Both follow incident retention via cascading foreign keys. Lookups make no new AI call; their delivery binding and normal receipt support review/replay protection. [Review semantics and limits](moderator-review.md#revisions-recovery-and-limits) explain historical evidence and retry behavior.
 
 ## Rules and limitations
 

@@ -17,12 +17,15 @@ from gateway.platforms._shared import get_scoped_secret
 from hermes_cli.config import read_user_config_raw
 from hermes_constants import get_hermes_home
 
+from .commands import CommandRequest
 from .config import Config
 from .engine import Engine
 from .hermes_plugin import PLATFORM, explicit_activation
 from .live import LiveSession, delivery_nonce, parse_command
 from .models import MessageEvent
 from .storage import Store
+
+REVIEW_BUTTONS = {"liberdus:review:v1:" + label: label for label in ("promotion", "not-promotion", "unsure")}
 
 VERIFIED_COMMIT = "c1488ac947c9bc33fd65ec464548dc9d8edd6122"
 
@@ -70,6 +73,9 @@ class PilotClient(discord.Client):
 
     async def on_message(self, message):
         self.adapter.receive(message)
+
+    async def on_interaction(self, interaction):
+        await self.adapter.receive_review_click(interaction)
 
     async def on_raw_message_edit(self, payload):
         if "content" in payload.data or "attachments" in payload.data:
@@ -278,7 +284,17 @@ class ModerationAdapter(BasePlatformAdapter):
             if channel in self.policy.command_channel_ids:
                 if str(message.author.id) not in self.policy.operator_user_ids:
                     return
-                command = parse_command(message.content, str(message.guild.id), channel, str(message.author.id))
+                reference = getattr(message, "reference", None)
+                reply_id = None
+                if reference is not None:
+                    if (getattr(reference, "type", discord.MessageReferenceType.default) != discord.MessageReferenceType.default
+                            or getattr(reference, "guild_id", None) not in (None, message.guild.id)
+                            or getattr(reference, "channel_id", None) != message.channel.id):
+                        return
+                    identity = getattr(reference, "message_id", None)
+                    reply_id = str(identity) if identity is not None else None
+                command = parse_command(message.content, str(message.guild.id), channel, str(message.author.id),
+                                        reply_to_message_id=reply_id)
                 if command:
                     self.enqueue("command", (str(message.id), command))
             else:
@@ -296,12 +312,68 @@ class ModerationAdapter(BasePlatformAdapter):
             # conservatively so queued evidence cannot resurrect it.
             self.coverage_gap("deleted_message")
 
-    async def emit(self, channel_id, content, nonce):
+    async def interaction_notice(self, interaction, content, *, deferred=False):
+        try:
+            sender = interaction.followup.send if deferred else interaction.response.send_message
+            await asyncio.wait_for(sender(content, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()), timeout=10)
+        except Exception:
+            pass  # A confirmation failure never replays a stored review.
+
+    async def receive_review_click(self, interaction):
+        data = interaction.data
+        if not isinstance(data, dict) or not isinstance(data.get("custom_id"), str):
+            return
+        if (interaction.type != discord.InteractionType.component or data.get("component_type") != 2
+                or data.get("custom_id") not in REVIEW_BUTTONS):
+            return
+        message = interaction.message
+        if (not self.in_scope(interaction.guild_id, interaction.channel_id)
+                or str(interaction.channel_id) not in self.policy.command_channel_ids
+                or interaction.user.bot or str(interaction.user.id) not in self.policy.operator_user_ids
+                or message is None or str(message.author.id) != self.policy.bot_user_id
+                or message.channel.id != interaction.channel_id):
+            await self.interaction_notice(interaction, "Review unavailable here or for this account.")
+            return
+        event = CommandRequest(str(interaction.guild_id), str(interaction.channel_id), str(interaction.user.id),
+                               "review", arguments=(REVIEW_BUTTONS[data["custom_id"]],),
+                               reply_to_message_id=str(message.id))
+        if self.live.review_reply_target(event) is None:
+            await self.interaction_notice(interaction, "Saved report link unavailable. Request a new !mod incident ID view.")
+            return
+        if self.queue.full():
+            await self.interaction_notice(interaction, "Moderation is busy. Try the review button again shortly.")
+            return
+        generation = self.generation
+        try:
+            await asyncio.wait_for(interaction.response.defer(ephemeral=True, thinking=True), timeout=2)
+        except Exception:
+            return  # No mutation without a confirmed acknowledgement.
+        if generation != self.generation or not self.online or self.closing:
+            await self.interaction_notice(interaction, "Connection changed. No review saved; try again.", deferred=True)
+            return
+        try:
+            self.queue.put_nowait((generation, "review_click", (interaction, event, asyncio.get_running_loop().time() + 30)))
+        except asyncio.QueueFull:
+            await self.interaction_notice(interaction, "Moderation is busy. No review saved; try again shortly.", deferred=True)
+
+    async def emit(self, channel_id, content, nonce, *, reviewable=False):
         if not self.online or self.closing:
             raise ValueError("Moderation transport is offline")
         channel = self.checked_channel(channel_id, sending=True)
-        return await asyncio.wait_for(channel.send(content, allowed_mentions=discord.AllowedMentions.none(),
-            nonce=nonce, suppress_embeds=True, silent=True), timeout=20)
+        view = None
+        if reviewable:
+            view = discord.ui.View(timeout=None)
+            labels = {"promotion": "Promotion", "not-promotion": "Not promotion", "unsure": "Unsure"}
+            for identity, label in REVIEW_BUTTONS.items():
+                view.add_item(discord.ui.Button(label=labels[label], style=discord.ButtonStyle.secondary, custom_id=identity))
+        try:
+            return await asyncio.wait_for(channel.send(str(content), allowed_mentions=discord.AllowedMentions.none(),
+                nonce=nonce, suppress_embeds=True, silent=True, view=view), timeout=20)
+        finally:
+            if view is not None:
+                # Interactions use PilotClient.on_interaction plus durable message bindings.
+                # No per-message callbacks need to survive in memory or be re-registered after restart.
+                view.stop()
 
     async def flush_reports(self):
         while self.online:
@@ -310,7 +382,7 @@ class ModerationAdapter(BasePlatformAdapter):
                 return
             try:
                 sent = await self.emit(report["payload"]["channel_id"], report["payload"]["content"],
-                                       delivery_nonce("report:" + report["id"]))
+                                       delivery_nonce("report:" + report["id"]), reviewable=report["kind"] == "moderator")
                 self.live.finish_report(report["id"], str(sent.id))
             except asyncio.CancelledError:
                 self.live.finish_report(report["id"])
@@ -354,9 +426,29 @@ class ModerationAdapter(BasePlatformAdapter):
                         content = self.live.command(value[1], value[0], self.online)
                         if content:
                             try:
-                                await self.emit(value[1].channel_id, content, delivery_nonce("command:" + value[0]))
+                                target = getattr(content, "review_target", None)
+                                sent = await self.emit(value[1].channel_id, content, delivery_nonce("command:" + value[0]),
+                                                       reviewable=target is not None)
+                                if target is not None:
+                                    self.live.save_review_prompt(str(sent.id), value[1].channel_id, target)
                             except Exception:
                                 pass  # Never replay a command after an uncertain response.
+                    elif kind == "review_click":
+                        interaction, event, deadline = value
+                        now = asyncio.get_running_loop().time()
+                        if now > deadline or now < self.next_command_at:
+                            await self.interaction_notice(interaction, "Review not saved. Please try the button again.", deferred=True)
+                            continue
+                        # Recheck private-channel access and policy at execution, after queued events.
+                        try:
+                            self.checked_channel(event.channel_id, sending=True)
+                        except ValueError:
+                            await self.interaction_notice(interaction, "Private review channel unavailable. No review saved.", deferred=True)
+                            continue
+                        self.next_command_at = now + 1
+                        content = self.live.command(event, "interaction:" + str(interaction.id), self.online)
+                        await self.interaction_notice(interaction, content or "This interaction was already processed or is no longer authorized.",
+                                                      deferred=True)
                     # Drain already-arrived edits/messages before handing a report to the network.
                     if self.queue.empty() and generation == self.generation:
                         if self.classifier is not None:

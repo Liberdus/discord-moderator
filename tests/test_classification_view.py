@@ -57,7 +57,7 @@ class SavedClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.dump(), before)
         self.provider.assert_awaited_once()
 
-    async def test_private_rendering_is_bounded_and_excludes_raw_content(self):
+    async def test_private_rendering_is_bounded_and_includes_safe_saved_excerpt(self):
         text = self.live.command(self.request, "900", True)
         self.assertIn("Label     : Quoted warning", text)
         self.assertIn("Confidence: 0.80 (model score)", text)
@@ -70,7 +70,8 @@ class SavedClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(max(map(len, panel.splitlines())), 32)
         self.assertIn("`" + self.identity + "`", text)
         self.assertIn("no new AI call", text)
-        self.assertNotIn("claim a reward", text)
+        self.assertIn("claim a reward", text)
+        self.assertIn("[Open message 1](<https://discord.com/channels/1/10/100>)", text)
         self.assertNotIn("@everyone", text)
         self.assertLess(len(text), 1900)
         self.assertIsNone(self.live.command(self.request, "900", True))

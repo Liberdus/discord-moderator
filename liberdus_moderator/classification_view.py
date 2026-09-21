@@ -1,5 +1,6 @@
 """Read and render stored JEV evidence. No worker, secrets, provider I/O or writes."""
 
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -157,6 +158,18 @@ def format_classification(view):
     return "\n".join(lines)
 
 
+def format_moderator_review(view):
+    from .moderator_review import LABELS
+    lines = ["MODERATOR REVIEW", "-" * PANEL_WIDTH]
+    if view["state"] in {"not_reviewed", "unavailable"}:
+        lines.append(_field("Result", "Not reviewed" if view["state"] == "not_reviewed" else "Saved review unavailable"))
+    else:
+        lines += [_field("Label", LABELS[view["label"]]), _field("Review rev", view["revision"]),
+                  _field("Evidence", view["state"].upper()),
+                  _field("Reviewed", datetime.fromtimestamp(view["reviewed_at"], timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))]
+    return "\n".join(lines)
+
+
 def format_incident(incident):
     """Keep long copyable IDs outside the 32-column, single-column data panel."""
     rules = {"cross_channel_repeat": "Cross-channel repeat", "same_channel_repeat": "Same-channel repeat",
@@ -168,9 +181,15 @@ def format_incident(incident):
              _field("State", states.get(incident["status"], "Unknown state")),
              _field("Revision", incident["revision"]),
              _field("Evidence", f"{len(incident['evidence'])} messages"), "",
-             format_classification(incident["classification"])]
-    return ("**Moderation review**\n```\n" + "\n".join(lines) + "\n```\n"
+             format_classification(incident["classification"]), "",
+             format_moderator_review(incident.get("moderator_review", {"state": "not_reviewed"}))]
+    from .evidence_view import format_evidence, units
+    body = ("**Moderation review**\n```\n" + "\n".join(lines) + "\n```\n"
             f"**Incident ID**\n`{incident['id']}`\n"
-            f"**Author ID** `{incident['author_id']}`\n"
-            "*Saved snapshot. Enforcement disabled.*\n"
-            "*Saved result only; no new AI call.*")
+            f"**Author ID** `{incident['author_id']}`\n")
+    review = incident.get("moderator_review", {})
+    if review.get("reviewer_id"):
+        body += f"**Reviewer ID** `{review['reviewer_id']}`\n"
+    footer = "*Saved snapshot. Enforcement disabled.*\n*Saved result only; no new AI call.*"
+    preview = format_evidence(incident.get("evidence_view", {}), 1900 - units(body + footer))
+    return body + preview + footer

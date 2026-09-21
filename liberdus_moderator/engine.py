@@ -256,13 +256,14 @@ class Engine:
 
     def _report_payload(self, incident_id, revision, match, destination):
         # Do not copy attacker text or live mentions into a notification.
-        links = [f"https://discord.com/channels/{self.config.guild_id}/{item['channel_id']}/{item['message_id']}"
-                 for item in match.evidence[:5]]
+        links = [f"[Open message {index}](<https://discord.com/channels/{self.config.guild_id}/{item['channel_id']}/{item['message_id']}>)"
+                 for index, item in enumerate(match.evidence[:5], 1)]
         content = (
             f"Moderation review {incident_id} (revision {revision})\n"
             f"Rule: {match.rule_id}\nAuthor ID: {match.author_id}\n"
             f"Observed copies: {len(match.evidence)}\n"
-            "Report-only; no public action.\n" + "\n".join(links)
+            "Report-only; no public action.\n" + "\n".join(links) + "\n"
+            "Choose Promotion, Not promotion, or Unsure below. Human review only."
         )
         return {
             "guild_id": self.config.guild_id, "channel_id": destination,

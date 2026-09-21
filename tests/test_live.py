@@ -73,11 +73,12 @@ class LiveTests(unittest.TestCase):
         self.assertIsNone(self.live.command(replace(request, command="resume"), "100", True))
         self.assertTrue(self.engine.status()["paused"])
 
-    def test_explain_never_copies_attacker_text_or_mentions(self):
+    def test_explain_shows_saved_text_and_explicit_source_links(self):
         self.pattern()
         incident = self.store.incidents()[0]
         result = self.live.command(CommandRequest("1", "20", "98", "explain", arguments=(incident["id"],)), "200", True)
-        self.assertNotIn("Repeated community", result)
+        self.assertIn("Repeated community", result)
+        self.assertIn("Open message 1", result)
         self.assertNotIn("<@", result)
         self.assertIn(incident["id"], result)
 

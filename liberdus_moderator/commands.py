@@ -6,6 +6,7 @@ the identity envelope from message text or a model's output.
 
 from dataclasses import dataclass, field
 import re
+import sqlite3
 
 from .engine import Engine
 
@@ -22,8 +23,11 @@ class CommandRequest:
     command: str
     role_ids: tuple[str, ...] = field(default_factory=tuple)
     arguments: tuple[str, ...] = field(default_factory=tuple)
+    reply_to_message_id: str | None = None
 
     def __post_init__(self):
+        if self.reply_to_message_id is not None and not _id(self.reply_to_message_id):
+            raise ValueError("Invalid reply message ID")
         if not all(_id(value) for value in (self.guild_id, self.channel_id, self.user_id)):
             raise ValueError("Command identity must use numeric Discord ID strings")
         if not isinstance(self.role_ids, tuple) or len(self.role_ids) > 250 or not all(_id(value) for value in self.role_ids):
@@ -38,7 +42,7 @@ class CommandRequest:
         if not isinstance(data, dict):
             raise ValueError("Command request must be an object")
         data = dict(data)
-        if set(data) - {"guild_id", "channel_id", "user_id", "command", "role_ids", "arguments"}:
+        if set(data) - {"guild_id", "channel_id", "user_id", "command", "role_ids", "arguments", "reply_to_message_id"}:
             raise ValueError("Unknown command request fields")
         for key in ("role_ids", "arguments"):
             if key in data:
@@ -83,9 +87,22 @@ def handle_command(engine: Engine, request: CommandRequest):
         if incident is None:
             return {**result, "ok": False, "error": "incident_not_found"}
         from .classification_view import saved_classification
-        result["data"] = {**incident, "classification": saved_classification(engine, incident)}
+        from .evidence_view import saved_evidence
+        from .moderator_review import saved_review
+        result["data"] = {**incident, "classification": saved_classification(engine, incident),
+                          "evidence_view": saved_evidence(engine, incident),
+                          "moderator_review": saved_review(engine, incident)}
         if name == "explain":
             result["note"] = "Saved rule evidence and stored JEV results; no actions, policy changes, or new AI calls."
+    elif name == "review" and len(arguments) == 3:
+        from .moderator_review import record_review
+        try:
+            result["data"] = record_review(engine, *arguments, reviewer_id=request.user_id)
+        except (ValueError, KeyError, TypeError, sqlite3.Error):
+            # Fixed vocabulary only; never echo arbitrary saved text or database errors.
+            return {**result, "ok": False, "error": "review_not_saved_check_id_revision_label_and_evidence"}
+    elif name == "review":
+        return {**result, "ok": False, "error": "reply_to_report_with_review_label_or_use_review_ID_REV_LABEL"}
     elif name == "selftest" and not arguments:
         from .selftest import run_selftest
         result["data"] = run_selftest()
