@@ -75,8 +75,9 @@ def handle_command(engine: Engine, request: CommandRequest):
                 store.set_setting("role_exemption_enabled", arguments == ("on",))
         result["data"] = engine.status()
     elif name in ("deletion", "auto-delete", "timeout") and arguments in ((), ("on",), ("off",)):
-        if arguments == ("on",) and not config.actions_enabled:
-            return {**result, "ok": False, "error": "actions_disabled_in_policy"}
+        from .actions import permitted
+        if arguments == ("on",) and not permitted(config, name.replace("-", "_")):
+            return {**result, "ok": False, "error": "timeout_disabled_in_public_policy" if name == "timeout" and config.allow_public_monitored_channels else "actions_disabled_in_policy"}
         if arguments:
             with store.transaction():
                 store.set_setting(name.replace("-", "_") + "_enabled", arguments == ("on",))

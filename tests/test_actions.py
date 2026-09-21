@@ -48,6 +48,30 @@ class ActionTests(unittest.TestCase):
         self.store.set_setting('policy_hash',self.engine.config.policy_hash)
         self.assertFalse(self.command('timeout',('on',))['ok'])
 
+    def test_public_deletion_commands_and_timeout_policy_override_persisted_flags(self):
+        self.engine.config = replace(self.config, allow_public_monitored_channels=True,
+            allow_public_deletion=True, included_category_ids=('100',), excluded_category_ids=('200',))
+        self.store.set_setting('policy_hash', self.engine.config.policy_hash)
+        for name in ('deletion', 'auto-delete'):
+            self.assertTrue(self.command(name, ('on',))['ok'])
+        self.assertTrue(self.engine.status()['deletion_enabled'])
+        self.assertTrue(self.engine.status()['auto_delete_enabled'])
+        text = self.live.command(CommandRequest('1', '20', '98', 'deletion'), '900', True)
+        self.assertIn('Policy: deletion only', text)
+        from liberdus_moderator.classification_view import format_incident, incident_view
+        text = format_incident(incident_view(self.engine, self.incident))
+        self.assertIn('Timeout is disabled by policy', text)
+        self.store.set_setting('timeout_enabled', True)  # Stale/externally changed flag cannot bypass policy.
+        self.assertFalse(self.command('timeout', ('on',))['ok'])
+        self.assertFalse(actions.enabled(self.engine, 'timeout'))
+        self.assertFalse(self.engine.status()['timeout_enabled'])
+        with self.assertRaises(actions.ActionError):
+            actions.plan(self.engine, self.identity, 1, 'timeout', '98', '20')
+        self.assertTrue(self.command('timeout', ('off',))['ok'])
+        self.assertFalse(self.command('deletion', ('on',), channel='10')['authorized'])
+        self.command('deletion', ('off',))
+        self.assertFalse(actions.enabled(self.engine, 'deletion'))
+
     def test_confirmation_has_exact_links_is_bound_and_one_use(self):
         text=self.proposal()
         self.assertIn('Delete 3 message(s)',text)

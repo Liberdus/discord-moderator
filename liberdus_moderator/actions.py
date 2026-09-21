@@ -23,9 +23,15 @@ class ActionText(str):
         return value
 
 
+def permitted(config, name):
+    return (config.actions_enabled and config.mode == 'report_only'
+            and name in ('deletion', 'auto_delete', 'timeout')
+            and (not config.allow_public_monitored_channels
+                 or (config.allow_public_deletion and name in ('deletion', 'auto_delete'))))
+
+
 def enabled(engine, name):
-    return (engine.config.actions_enabled and engine.config.mode == 'report_only'
-            and engine.store.get_setting(name + '_enabled', False) is True)
+    return permitted(engine.config, name) and engine.store.get_setting(name + '_enabled', False) is True
 
 
 def initialize(engine):

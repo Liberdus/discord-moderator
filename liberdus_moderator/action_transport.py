@@ -79,7 +79,7 @@ class ActionTransport:
             for item in payload['evidence']:
                 channel = self.checked_channel(item['channel_id'])
                 if payload['kind'] == 'delete' and not channel.permissions_for(channel.guild.me).manage_messages:
-                    raise actions.ActionError('Missing Manage Messages in the test channel.')
+                    raise actions.ActionError('Missing Manage Messages in the monitored channel.')
                 message = await asyncio.wait_for(channel.fetch_message(int(item['message_id'])), timeout=5)
                 from .hermes_adapter import snapshot
                 changes = actions.message_changes(item, snapshot(message))

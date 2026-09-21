@@ -24,6 +24,7 @@ BOT = '1548537340870533150'
 COMMAND = '1551252553331642558'
 COMMITTERS = '1318586868136415333'
 INCLUDED_CATEGORIES = ('746426387606274201', '746426387606274202')
+MANAGE_MESSAGES = 1 << 13
 TEST_CHANNELS = frozenset({'1551249559819264030', '1551249642216357908', '1551249693399584818'})
 PLAN_NAME = '.liberdus-category-rollout-plan.json'
 PLAN_AGE = 86400
@@ -81,7 +82,7 @@ def inventory(config, get):
             everyone = permissions(guild, [], None, channel)
             row.update(everyone_visible=bool(everyone & VIEW), bot_view=bool(bot & VIEW),
                        bot_history=bool(bot & VIEW and bot & HISTORY), bot_send=bool(bot & VIEW and bot & SEND),
-                       bot_administrator=bool(bot & ADMIN))
+                       bot_administrator=bool(bot & ADMIN), bot_manage_messages=bool(bot & VIEW and bot & MANAGE_MESSAGES))
         output.append(row)
     return dict(guild_id=config.guild_id, bot_identity_matches=True,
                 categories=[dict(category_id=identity, name=channel['name']) for identity, channel in sorted(categories.items())],
@@ -181,12 +182,12 @@ def verify_plan(profile, get, *, now=None):
     updated = replace(config, schema_version=2, allow_public_monitored_channels=True,
                       excluded_category_ids=tuple(chosen['excluded_category_ids']),
                       included_category_ids=tuple(chosen['included_category_ids']), monitored_channel_ids=target_ids,
-                      actions_enabled=False, policy_version='category-observation-1',
+                      actions_enabled=False, allow_public_deletion=False, policy_version='category-observation-1',
                       rules=replace(config.rules, approved_crossposts=exceptions))
     return config, updated, chosen
 
 
-def apply_plan(profile, get, *, now=None):
+def apply_plan(profile, get, *, now=None, enable_deletion=False):
     import yaml
     paths = (profile.parent.parent / 'config.yaml', profile / 'config.yaml',
              profile / 'plugins/liberdus-moderator/plugin.yaml', profile / 'state/moderation.lock',
@@ -198,15 +199,19 @@ def apply_plan(profile, get, *, now=None):
     if (any(data.get('platforms', {}).get('discord', {}).get('enabled') is not False for data in (default, local))
             or local.get('platforms', {}).get('liberdus_moderator', {}).get('enabled') is not False):
         raise RolloutError('Disable the moderation platform and finish the gateway restart first.')
-    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.5.7':
-        raise RolloutError('Install the reviewed 0.5.7 plugin while disabled before applying scope.')
+    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.5.8':
+        raise RolloutError('Install the reviewed 0.5.8 plugin while disabled before applying scope.')
     lock = os.open(paths[3], os.O_RDWR | os.O_NOFOLLOW)
     try:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RolloutError('Moderation is still running; finish the disabled gateway restart.') from None
-        config, updated, chosen = verify_plan(profile, get, now=now)
+        if enable_deletion:
+            from .public_deletion import verify_deletion
+            config, updated, chosen = verify_deletion(profile, get)
+        else:
+            config, updated, chosen = verify_plan(profile, get, now=now)
         policy_path = profile / 'moderation.toml'
         original_policy = policy_path.read_bytes()
         if any(path.read_bytes() != content for path, content in saved_configuration.items()):
@@ -247,7 +252,8 @@ def apply_plan(profile, get, *, now=None):
     return dict(configured=True, platform_enabled=False, selected_channels=chosen['selected'],
                 selected_count=len(chosen['selected']), included_category_ids=chosen['included_category_ids'],
                 excluded_category_ids=chosen['excluded_category_ids'],
-                policy_hash=updated.policy_hash, actions_enabled=False, action_flags_reset=True,
+                policy_hash=updated.policy_hash, actions_enabled=updated.actions_enabled,
+                public_deletion_allowed=updated.allow_public_deletion, action_flags_reset=True,
                 backup=str(backup), usage_counters_changed=False, paused_state_changed=False,
                 credentials_changed=False, discord_changed=False, provider_called=False, gateway_restarted=False)
 

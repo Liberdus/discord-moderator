@@ -1,4 +1,4 @@
-Latest prepared: **0.5.7** limits public observation to categories `746426387606274202` and `746426387606274201`, keeps Committers excluded, and disables all Discord moderation actions. Permission gaps outside these categories no longer block planning. Reports stay in private `bot-mod`; new channels are not automatically added. [Saved plan and owner rollout instructions](docs/public-observation.md). Deployment is not yet confirmed; installing code alone preserves the existing pilot.
+Latest prepared: **0.5.8** adds an explicit deletion opt-in for the seven approved Community channels. Existing Delete/Auto-delete commands become available after installation; public timeouts remain blocked. The automatic rule stays limited to fresh credential requests scoring above 0.90. [Install scoped public deletion](docs/public-deletion.md). Deployment is not yet confirmed. The prior [observation rollout](docs/public-observation.md) remains the default without opt-in.
 
 # Liberdus Discord Moderator
 

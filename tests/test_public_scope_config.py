@@ -18,7 +18,7 @@ class PublicScopeConfigTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 config = policy(schema_version=schema)
                 legacy = asdict(config)
-                del legacy['allow_public_monitored_channels'], legacy['excluded_category_ids'], legacy['included_category_ids']
+                del legacy['allow_public_deletion'], legacy['allow_public_monitored_channels'], legacy['excluded_category_ids'], legacy['included_category_ids']
                 if schema == 1:
                     del legacy['classifier']
                 else:
@@ -52,12 +52,24 @@ class PublicScopeConfigTests(unittest.TestCase):
         self.assertEqual(Config.from_dict(tomllib.loads(policy_text(config))),config)
         self.assertNotEqual(base.policy_hash,config.policy_hash)
         self.assertNotEqual(config.policy_hash,replace(config,included_category_ids=('100',)).policy_hash)
-        prior=asdict(base); del prior['included_category_ids']; del prior['classifier']['exempt_role_ids']
+        prior=asdict(base); del prior['allow_public_deletion'], prior['included_category_ids']; del prior['classifier']['exempt_role_ids']
         expected=hashlib.sha256(json.dumps(prior,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
         self.assertEqual(base.policy_hash,expected)
         for values in (('0',),('abc',),('100','100'),('200',),[True],'100'):
             with self.subTest(values=values),self.assertRaises(ValueError):
                 replace(base,included_category_ids=values)
+
+    def test_public_deletion_requires_explicit_actions_and_category_boundaries(self):
+        base = policy(schema_version=2, allow_public_monitored_channels=True,
+                      included_category_ids=('100',), excluded_category_ids=('200',))
+        opted = replace(base, actions_enabled=True, allow_public_deletion=True)
+        self.assertEqual(Config.from_dict(tomllib.loads(policy_text(opted))), opted)
+        self.assertNotEqual(base.policy_hash, opted.policy_hash)
+        for changes in ({'actions_enabled': False}, {'allow_public_monitored_channels': False},
+                        {'included_category_ids': ()}, {'excluded_category_ids': ()},
+                        {'allow_public_deletion': 'true'}, {'allow_public_deletion': 1}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                replace(opted, **changes)
 
     def test_public_flag_requires_exact_boolean(self):
         for value in (1, 0, 'true', None, []):

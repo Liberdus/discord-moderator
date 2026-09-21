@@ -166,6 +166,7 @@ class Config:
     actions_enabled: bool = False
     classifier: ClassifierSettings = field(default_factory=ClassifierSettings)
     allow_public_monitored_channels: bool = False
+    allow_public_deletion: bool = False
     excluded_category_ids: tuple[str, ...] = ()
     included_category_ids: tuple[str, ...] = ()
 
@@ -191,13 +192,16 @@ class Config:
             raise ValueError("policy_version must be nonempty printable text of at most 128 codepoints")
         if not isinstance(self.mode, str) or self.mode not in ("off", "report_only"):
             raise ValueError("detection mode must be off or report_only")
-        for name in ("logs_enabled", "ai_enabled", "actions_enabled", "allow_public_monitored_channels"):
+        for name in ("logs_enabled", "ai_enabled", "actions_enabled", "allow_public_monitored_channels", "allow_public_deletion"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be a boolean")
         if not isinstance(self.classifier, ClassifierSettings):
             raise ValueError("classifier must use validated settings")
-        if self.allow_public_monitored_channels and self.actions_enabled:
-            raise ValueError("Public monitored channels require actions_enabled = false")
+        if self.allow_public_monitored_channels and self.actions_enabled and not self.allow_public_deletion:
+            raise ValueError("Public monitored channels require actions_enabled = false unless allow_public_deletion = true")
+        if self.allow_public_deletion and (not self.allow_public_monitored_channels or not self.actions_enabled
+                                           or not self.included_category_ids or not self.excluded_category_ids):
+            raise ValueError("Public deletion requires explicit public action opt-in and category boundaries")
         if self.actions_enabled and (self.schema_version != 2 or self.mode != "report_only"):
             raise ValueError("Actions require schema 2 and report_only detection")
         if self.schema_version == 1 and (self.ai_enabled or self.classifier != ClassifierSettings()):
@@ -218,7 +222,7 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Config:
-        root_keys = {"schema_version", "policy_version", "mode", "logs_enabled", "ai_enabled", "actions_enabled", "allow_public_monitored_channels", "scope", "rules", "storage", "classifier"}
+        root_keys = {"schema_version", "policy_version", "mode", "logs_enabled", "ai_enabled", "actions_enabled", "allow_public_monitored_channels", "allow_public_deletion", "scope", "rules", "storage", "classifier"}
         _object(data, "configuration", root_keys)
         for required in ("schema_version", "policy_version", "scope"):
             if required not in data:
@@ -245,6 +249,8 @@ class Config:
     def policy_hash(self) -> str:
         # Bind persisted decisions to the entire effective configuration, including scope.
         data = asdict(self)
+        if not self.allow_public_deletion:
+            del data["allow_public_deletion"]
         if not self.allow_public_monitored_channels:
             del data["allow_public_monitored_channels"]
         if not self.included_category_ids:

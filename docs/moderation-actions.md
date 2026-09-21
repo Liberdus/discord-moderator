@@ -1,3 +1,5 @@
+> **0.5.8 public-deletion opt-in:** the owner requested deletion in the seven approved Community channels. See [installation and controls](public-deletion.md). The historical observation/action instructions below describe their original releases.
+
 > **0.5.4 safety update:** [stop controls, role verification and timeout protections](review-fixes.md) address the subsequent code review findings. The full protected permission set is listed there. Existing feature flags are preserved.
 
 > **Superseded by 0.5.2:** use [the Discord deletion-call fix](delete-call-fix.md). It retains the 0.5.1 role comparison correction and fixes the next failure at the SDK call.

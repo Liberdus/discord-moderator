@@ -180,7 +180,7 @@ def incident_view(engine, incident, revision=None):
     from .staff_review import saved_assessment, snapshot
     evidence = incident["evidence"] if revision is None else snapshot(engine, incident, revision)
     from .actions import history
-    view = {**incident, "actions_enabled": engine.config.actions_enabled, "action_history": history(engine, incident["id"]), "revision": incident["revision"] if revision is None else revision,
+    view = {**incident, "public_deletion_allowed": engine.config.allow_public_deletion, "actions_enabled": engine.config.actions_enabled, "action_history": history(engine, incident["id"]), "revision": incident["revision"] if revision is None else revision,
             "latest_revision": incident["revision"], "evidence": evidence,
             "classification": saved_classification(engine, incident),
             "moderator_review": saved_review(engine, incident),
@@ -256,6 +256,8 @@ def format_incident(incident, *, details=False):
                "\n**Actions · bottom row**\n")
     if incident.get("actions_enabled") is False:
         footer += "Deletion and timeouts are disabled. Dismiss closes review only."
+    elif incident.get("public_deletion_allowed"):
+        footer += "Delete needs confirmation. Timeout is disabled by policy. Dismiss closes review only."
     else:
         footer += ("Delete: remove message(s). Timeout: restrict member for 10 min server-wide.\n"
                    "Both need confirmation. Dismiss closes review only.")

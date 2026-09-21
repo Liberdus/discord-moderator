@@ -1,0 +1,102 @@
+"""Owner-run public deletion opt-in; verifies current scope and permissions before stopping Hermes."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+UPDATER = Path('/tmp/liberdus-update-0.5.8-20260921.pyz')
+UPDATER_SHA256 = '5ed37995ce30b44f2fee1d21f66b8bfa3a33471bd139983a5d334a90f7c2d9de'
+ROLLOUT = Path('/tmp/liberdus-public-deletion-20260921.pyz')
+ROLLOUT_SHA256 = '5b1f52b50916b60b5f37551f7531d75c1e23e56695b44a16674b6449a270a0ab'
+
+
+def run(argv):
+    lines = []
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, bufsize=1) as process:
+        for line in process.stdout:
+            print(line, end='', flush=True)
+            lines.append(line)
+        code = process.wait()
+    if code:
+        raise RuntimeError('Command failed; remaining steps were not run.')
+    return ''.join(lines)
+
+
+def restart(hermes):
+    output = run([hermes, '-p', 'default', 'gateway', 'restart'])
+    if (not re.search(r'^✓ User service restarted \(PID [0-9]+\)$', output, re.MULTILINE)
+            or 'gateway is DEGRADED' in output):
+        raise RuntimeError('Gateway did not confirm a healthy completed restart.')
+
+
+def main():
+    if pwd.getpwuid(os.getuid()).pw_name != 'hermes' or len(sys.argv) != 1:
+        print('Run this fixed helper without arguments from your existing hermes terminal.')
+        return 2
+    hermes = shutil.which('hermes')
+    if not hermes:
+        print('Hermes CLI was not found. No changes made.')
+        return 2
+    step = 'checking the staged bundles, active channel scope and deletion permissions'
+    try:
+        verified_bytes = []
+        for source, digest in ((UPDATER, UPDATER_SHA256), (ROLLOUT, ROLLOUT_SHA256)):
+            payload = source.read_bytes()
+            if hashlib.sha256(payload).hexdigest() != digest:
+                raise RuntimeError('Bundle hash does not match the reviewed release.')
+            verified_bytes.append((source.name, payload))
+        with tempfile.TemporaryDirectory(prefix='liberdus-apply-deletion-058-') as temporary:
+            files = []
+            for name, payload in verified_bytes:
+                target = Path(temporary) / name
+                target.write_bytes(payload)
+                target.chmod(0o600)
+                files.append(target)
+            verified = json.loads(run([sys.executable, str(files[1]), 'verify']))
+            if verified.get('verified') is not True or verified.get('public_deletion_allowed') is not True:
+                raise RuntimeError('Current scope or deletion permissions did not pass verification.')
+            os.environ['XDG_RUNTIME_DIR'] = f'/run/user/{os.getuid()}'
+            os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=' + os.environ['XDG_RUNTIME_DIR'] + '/bus'
+            step = 'disabling moderation and finishing the first restart'
+            print('1/4 Disable moderation and restart the shared gateway', flush=True)
+            run([hermes, '-p', 'liberdus-mod', 'config', 'set', 'platforms.liberdus_moderator.enabled', 'false'])
+            restart(hermes)
+            step = 'installing the 0.5.8 code'
+            print('2/4 Install the update', flush=True)
+            result = json.loads(run([sys.executable, str(files[0])]))
+            if result.get('updated') is not True or result.get('version') != '0.5.8':
+                raise RuntimeError('Updater did not confirm version 0.5.8.')
+            step = 'allowing deletion in the existing scope, with runtime switches OFF'
+            print('3/4 Allow scoped public deletion; leave runtime action switches OFF', flush=True)
+            result = json.loads(run([sys.executable, str(files[1]), 'apply']))
+            if (result.get('configured') is not True or result.get('actions_enabled') is not True
+                    or result.get('public_deletion_allowed') is not True
+                    or result.get('action_flags_reset') is not True or result.get('platform_enabled') is not False):
+                raise RuntimeError('Policy helper did not confirm scoped deletion capability and action switches OFF.')
+            step = 'enabling moderation and finishing the final restart'
+            print('4/4 Enable moderation and restart the shared gateway', flush=True)
+            run([hermes, '-p', 'liberdus-mod', 'config', 'set', 'platforms.liberdus_moderator.enabled', 'true'])
+            restart(hermes)
+        print('Public deletion capability configured and gateway restarts confirmed.')
+        print('In bot-mod, use !mod deletion on, then !mod auto-delete on, then !mod status. Expect Version: 0.5.8, deletion ON, auto-delete ON and timeout OFF.')
+        print('Only the existing seven approved channels are eligible. Committers stays excluded. Timeouts are blocked by this policy; new channels are not added automatically.')
+        print('JEV budgets, usage, keys, review history and pause state were preserved. If paused, use !mod resume when ready.')
+        return 0
+    except KeyboardInterrupt:
+        print(f'Interrupted during {step}. Inspect output before taking another step.')
+        return 130
+    except Exception as error:
+        print(f'Stopped during {step}: {error}')
+        print('Later steps were not run. Keep the printed backups and share the output before retrying.')
+        return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

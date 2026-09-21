@@ -1,3 +1,5 @@
+> **0.5.8 public-deletion opt-in:** the owner requested deletion in the seven approved Community channels. See [installation and controls](public-deletion.md). The historical observation/action instructions below describe their original releases.
+
 # Public-channel observation rollout — 0.5.7 prepared
 
 The owner narrowed observation to public text channels in categories **`746426387606274202`** and **`746426387606274201`**, skipping the staff guide/private-pilot/feedback prerequisites listed as items 1–3 in the previous plan. The rollout excludes **Committers**, category **`1318586868136415333`**, and disables **all Discord moderation actions**. Reports, staff assessments and operational notices stay in private `bot-mod` (`1551252553331642558`).

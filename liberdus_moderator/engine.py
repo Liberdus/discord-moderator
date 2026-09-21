@@ -49,6 +49,7 @@ class Engine:
                 and bool(set(roles) & set(self.config.classifier.exempt_role_ids)))
 
     def status(self):
+        from .actions import enabled
         return {
             "mode": self.config.mode,
             "paused": self.store.get_setting("paused", False),
@@ -56,7 +57,8 @@ class Engine:
             "coverage": "code_and_jev" if self.config.classifier.mode == "report_only" else "code_only",
             "live_discord_connected": False,
             "ai_enabled": self.config.ai_enabled, "actions_enabled": self.config.actions_enabled,
-            **{key + "_enabled": self.config.actions_enabled and self.store.get_setting(key + "_enabled", False) is True
+            "public_deletion_allowed": self.config.allow_public_deletion,
+            **{key + "_enabled": enabled(self, key)
                for key in ("deletion", "auto_delete", "timeout")},
             "classifier_mode": self.config.classifier.mode,
             "classifier_state": self.store.get_setting("screening_state" if self.config.classifier.mode == "report_only" else "classifier_state", "not_started") if self.config.ai_enabled else "off",

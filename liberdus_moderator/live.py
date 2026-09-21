@@ -107,13 +107,15 @@ class LiveSession:
             from .display import panel
             data = response["data"]
             return panel("Moderation action settings", [
-                "Policy actions: " + ("ON" if data["actions_enabled"] else "OFF"),
+                "Policy: " + ("deletion only" if data.get("public_deletion_allowed") else "enabled" if data["actions_enabled"] else "disabled"),
                 "Deletion: " + ("ON" if data["deletion_enabled"] else "OFF"),
                 "Auto-delete: " + ("ON" if data["auto_delete_enabled"] else "OFF"),
                 "Timeout: " + ("ON" if data["timeout_enabled"] else "OFF"),
-                "Auto-delete needs deletion ON.", "Timeout is staff-confirmed,",
-                "10 minutes, SERVER-WIDE.", "Off blocks new timeouts; it",
-                "does not lift existing ones.", "Settings survive restarts."])
+                "Auto-delete needs deletion ON.",
+                *(["Timeout blocked by public policy."] if data.get("public_deletion_allowed") else
+                  ["Timeout is staff-confirmed,", "10 minutes, SERVER-WIDE.",
+                   "Off blocks new timeouts; it", "does not lift existing ones."]),
+                "Settings survive restarts."])
         if event.command == "help":
             from .display import panel
             return panel("Moderation help", [
@@ -173,7 +175,7 @@ class LiveSession:
                           f"Trial used/reserved: ${status['screening_reserved_microusd'] / 1000000:.6f}",
                           f"Trial cap: ${self.config.classifier.daily_budget_microusd / 1000000:g}/day, ${self.config.classifier.total_budget_microusd / 1000000:g} total"]
             lines += ["", "ACTIONS", "--------------------------------",
-                      "Policy: " + ("enabled" if status["actions_enabled"] else "disabled"),
+                      "Policy: " + ("deletion only" if status.get("public_deletion_allowed") else "enabled" if status["actions_enabled"] else "disabled"),
                       "Deletion: " + ("ON" if status["deletion_enabled"] else "OFF"),
                       "Auto-delete: " + ("ON" if status["auto_delete_enabled"] else "OFF"),
                       "Timeout (staff): " + ("ON" if status["timeout_enabled"] else "OFF")]
