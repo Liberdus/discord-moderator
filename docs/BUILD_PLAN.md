@@ -1162,3 +1162,16 @@ Validation: 241 core/setup tests and 90 pinned Hermes/Discord integration tests 
 Owner installation: `python3 /tmp/liberdus-apply-0.5.1-20260921.py`. This code-only, hash-pinned helper disables/restarts, backs up and updates the plugin, then enables/restarts. It preserves current policy, runtime flags, key and accounting; it does not rerun action configuration. Details, fresh-message verification and rollback: `docs/deletion-fix.md` (also `/tmp/liberdus-deletion-fix-20260921.md`). Old release bundles are retained. GitHub push is pending.
 
 TODO: install 0.5.1, check status, send a fresh unedited sensitive-request test in bot-test-1, and confirm source deletion plus a `done` automatic attempt using `!mod actions ID`. Old incidents are historical after restart and must not be used to test automatic retry. Retain the separate manual confirmation, Dismiss, consenting-member timeout and unauthorized-member checks from 10.30; no additional live checks are claimed passed.
+
+
+### 10.32 — Correct Discord deletion method call (2026-09-21)
+
+After 0.5.1, the owner reported incident `02826060703e43068852f811c16c3a43` stuck at Auto delete: sending, followed by a generic action failure, while the source remained visible. The role comparison was no longer the blocker. Inspection of pinned discord.py 2.7.1 found that Message.delete does not accept the supplied reason keyword. Argument binding failed before HTTP, outside the attempt-finalization handler. Cleanup still reset coverage, which explains the historical report and deleted_message status without proving deletion.
+
+Version 0.5.2 calls the supported Message.delete() method, retaining the local incident/actor/target audit. Both deletion and timeout now construct their awaitables inside the guarded request wrapper. A synchronous call failure is conservatively finalized uncertain, stops the batch and is not retried. Existing stranded sending rows become uncertain on restart under the existing recovery rule; old messages are not automatically retried. The 0.5.1 comparison/fresh-role fix remains unchanged.
+
+The previous unrestricted mocks missed the API signature mismatch. New tests execute actual Discord Message deletion methods with only HTTP mocked for both automatic and manual deletion, verify the exact target and done outcome, and check local-call failure/non-retry. Validation: 245 core/setup plus 94 pinned Hermes/Discord integration tests passed. No live message deletion, paid provider call or owner-runtime change was performed.
+
+Owner update: `python3 /tmp/liberdus-apply-0.5.2-20260921.py`. The hash-pinned code-only helper disables/restarts, backs up and updates, then enables/restarts, preserving policy, keys, flags and accounting. See `docs/delete-call-fix.md` and `/tmp/liberdus-delete-call-fix-20260921.md`. Prior release artifacts are preserved; GitHub push is pending.
+
+TODO: install 0.5.2, send one fresh unedited sensitive-request test in bot-test-1, and verify both source disappearance and a done automatic action via `!mod actions ID`. Do not count a reset or historical report as successful deletion. All remaining manual-action, timeout and unauthorized-member live checks remain outstanding.

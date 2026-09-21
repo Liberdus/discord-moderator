@@ -1,3 +1,5 @@
+> **Superseded by 0.5.2:** use [the Discord deletion-call fix](delete-call-fix.md). It retains the 0.5.1 role comparison correction and fixes the next failure at the SDK call.
+
 # Deletion comparison fix — 0.5.1
 
 Discord gateway messages carry member roles. A later REST message fetch can return a User without those roles, even when the message is unchanged. Version 0.5.0 compared the complete event hash and treated missing roles as an edit. The owner observed the Sensitive request report followed by “Message changed since the report”; this refusal occurs before a deletion request. It is not a Discord permission-denial response.

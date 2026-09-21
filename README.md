@@ -1,4 +1,4 @@
-Latest: **0.5.1** fixes false “Message changed” refusals when Discord omits member roles from fetched messages. Message content and identity checks remain strict, with fresh membership checks before automatic deletion when role exemption is enabled. See [the update and live verification steps](docs/deletion-fix.md). The owner confirmed 0.5.0 deletion switches ON; successful live deletion awaits this fix.
+Latest: **0.5.2** fixes the unsupported argument on Discord message deletion and prevents local request-construction errors from leaving attempts at `sending`. Regression tests now execute the actual Discord SDK deletion method with only HTTP mocked. See [installation and a fresh live check](docs/delete-call-fix.md). The 0.5.1 missing-role comparison fix is retained; successful live deletion remains unverified.
 
 # Liberdus Discord Moderator
 

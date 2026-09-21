@@ -124,7 +124,7 @@ class ActionTransport:
                 key = actions.reserve(engine, payload, payload['author_id'])
                 if key is None:
                     raise actions.ActionError('This timeout was already attempted; check the action record.')
-                await self.action_request(key, member.timeout(now+timedelta(seconds=actions.TIMEOUT_SECONDS),
+                await self.action_request(key, lambda: member.timeout(now+timedelta(seconds=actions.TIMEOUT_SECONDS),
                     reason=f"Liberdus incident {payload['incident_id']}; staff {payload['actor']}; 10m"))
                 completed.append(f"Timeout: {self.action_outcome(key)}")
             else:
@@ -139,7 +139,9 @@ class ActionTransport:
                         continue
                     self.action_deletions.add(str(message.id))
                     attempted_delete = True
-                    await self.action_request(key, message.delete(reason=f"Liberdus incident {payload['incident_id']}; {payload['actor']}"))
+                    # Message.delete has no audit-reason parameter in discord.py 2.7.1.
+                    # The local durable ledger records incident, actor and target.
+                    await self.action_request(key, message.delete)
                     outcome = self.action_outcome(key)
                     completed.append(f'{message.id}: {outcome}')
                     if outcome not in ('done', 'already_absent'):
@@ -173,9 +175,11 @@ class ActionTransport:
         for kind, value in controls:
             self.enqueue(kind, value)
 
-    async def action_request(self, key, request):
+    async def action_request(self, key, request_factory):
         try:
-            await asyncio.wait_for(request, timeout=8)
+            # Construct the awaitable inside the guard as well: a local argument
+            # error must not strand the durable attempt in "sending".
+            await asyncio.wait_for(request_factory(), timeout=8)
         except discord.NotFound:
             actions.finish(self.live.engine, key, 'already_absent')
         except discord.Forbidden:

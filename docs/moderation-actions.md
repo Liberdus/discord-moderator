@@ -1,3 +1,5 @@
+> **Superseded by 0.5.2:** use [the Discord deletion-call fix](delete-call-fix.md). It retains the 0.5.1 role comparison correction and fixes the next failure at the SDK call.
+
 > **0.5.1 update:** the owner installed 0.5.0 and enabled deletion/auto-delete, but the preflight comparison falsely reported changed content. Use [the deletion fix](deletion-fix.md) to update while preserving current flags and budgets. The initial installation procedure below is retained for reference.
 
 # Moderation actions — 0.5.0

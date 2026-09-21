@@ -232,6 +232,70 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.drain()
         return message
 
+    def sdk_message(self):
+        # Actual SDK objects/methods; only HTTP is mocked. This catches signature
+        # mismatches that an unrestricted AsyncMock of Message.delete cannot.
+        identity=discord.utils.time_snowflake(datetime.now(timezone.utc))
+        self.guild.get_member=Mock(return_value=None)
+        state=Mock()
+        state.store_user.side_effect=lambda data, **kw:discord.User(state=state,data=data)
+        state.http.delete_message=AsyncMock()
+        payload=dict(id=str(identity),type=0,content='Send me your wallet recovery phrase.',
+            attachments=[],embeds=[],edited_timestamp=None,tts=False,pinned=False,mention_everyone=False,
+            mentions=[],mention_roles=[],author=dict(id='50',username='test',discriminator='0',avatar=None))
+        message=discord.Message(state=state,channel=self.channels[10],data=payload)
+        self.messages[identity]=message
+        return message,state.http.delete_message
+
+    async def test_auto_delete_through_real_sdk_method_reaches_http_once(self):
+        self.toggle('deletion');self.toggle('auto-delete')
+        raw=response('sensitive_request');raw['answers']['context']['choice']='other'
+        raw['answers']['context']['probabilities']={key:1. if key=='other' else 0. for key in raw['answers']['context']['probabilities']}
+        self.adapter.classifier=MessageScreener(self.adapter.live.engine,AsyncMock(return_value=raw),
+            on_result=lambda job:self.adapter.enqueue('screen_result',job))
+        message,http_delete=self.sdk_message()
+        self.adapter.live.engine.process(snapshot(message))
+        job=self.adapter.classifier.snapshot(str(message.id))
+        await self.adapter.classifier.evaluate_one(job)
+        await self.drain()
+        http_delete.assert_awaited_once_with(10,message.id)
+        record=self.adapter.store.db.execute('SELECT * FROM action_attempts_v1').fetchone()
+        self.assertEqual(record['outcome'],'done')
+        self.assertEqual(record['automatic'],1)
+        self.assertEqual(record['target_id'],str(message.id))
+        self.assertIn('done',self.channel.send.call_args.args[0])
+
+    async def test_manual_delete_through_real_sdk_method_reaches_http_once(self):
+        message,http_delete=self.sdk_message()
+        # Three matching messages produce a deterministic incident with SDK evidence.
+        self.adapter.process_evidence(snapshot(message))
+        for identity,channel_id in ((101,11),(102,12)):
+            other=self.message(identity,channel_id,guild=self.guild,content=message.content)
+            other.channel=self.channels[channel_id];other.delete=AsyncMock()
+            self.messages[identity]=other
+            self.adapter.process_evidence(snapshot(other))
+        incident=self.adapter.store.incidents()[0]
+        self.toggle('deletion')
+        payload=actions.plan(self.adapter.live.engine,incident['id'],incident['revision'],'delete',self.operator,'20',message_id=str(message.id))
+        result=await self.adapter.perform_action(payload)
+        self.assertIn('done',result)
+        http_delete.assert_awaited_once_with(10,message.id)
+        await self.adapter.perform_action(payload)
+        http_delete.assert_awaited_once()
+
+    async def test_local_call_error_finalizes_attempt_and_never_retries(self):
+        incident=self.pattern();payload=self.plan(incident)
+        # A synchronous call-construction error used to escape action_request.
+        self.messages[100].delete=Mock(side_effect=TypeError('synthetic signature error'))
+        result=await self.adapter.perform_action(payload)
+        self.assertIn('uncertain',result)
+        rows=actions.history(self.adapter.live.engine,incident['id'])
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['outcome'],'uncertain')
+        self.messages[101].delete.assert_not_awaited()
+        await self.adapter.perform_action(payload)
+        self.messages[100].delete.assert_called_once()
+
     async def test_manual_delete_accepts_missing_rest_roles(self):
         self.pattern()
         for message in self.messages.values():
