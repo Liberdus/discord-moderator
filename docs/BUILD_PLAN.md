@@ -1175,3 +1175,18 @@ The previous unrestricted mocks missed the API signature mismatch. New tests exe
 Owner update: `python3 /tmp/liberdus-apply-0.5.2-20260921.py`. The hash-pinned code-only helper disables/restarts, backs up and updates, then enables/restarts, preserving policy, keys, flags and accounting. See `docs/delete-call-fix.md` and `/tmp/liberdus-delete-call-fix-20260921.md`. Prior release artifacts are preserved; GitHub push is pending.
 
 TODO: install 0.5.2, send one fresh unedited sensitive-request test in bot-test-1, and verify both source disappearance and a done automatic action via `!mod actions ID`. Do not count a reset or historical report as successful deletion. All remaining manual-action, timeout and unauthorized-member live checks remain outstanding.
+
+
+### 10.33 — Button completion replies and separate control groups (2026-09-21)
+
+The owner confirmed that 0.5.2 automatically deleted the fresh sensitive-request message and that a subsequent suspicious-offer message stayed available for staff-confirmed deletion, which also succeeded. This completes those two live deletion checks from 10.32. Staff timeout and the deferred unauthorized-member check remain outstanding.
+
+The remaining thinking placeholder came from passing view=None to Webhook.send on plain completion replies; discord.py rejects that before HTTP. Version 0.5.3 omits the view argument for plain replies, retains real confirmation views and their durable binding, and preserves non-replay behavior on network failure. Existing stuck placeholders require dismissal; the fix applies to new interactions.
+
+Staff assessment controls are explicitly assigned row 0 and Delete/Dismiss/Timeout row 1, with separate labelled footer instructions explaining the two groups. Confirmations, action outcomes, cancellations and saved staff assessments have narrow code panels with section labels and reference IDs; source links remain clickable outside code blocks. No moderation scope, threshold, account-action policy or saved flags changed.
+
+Validation: 249 core/setup and 98 pinned-runtime integration tests passed, including real Webhook.send execution with HTTP mocked, plain ephemeral completions, actual confirmation components and message binding, serialized control rows and existing action regressions. No live profile mutation, Discord/JEV call or service restart occurred during development.
+
+Install from the hermes terminal with `python3 /tmp/liberdus-apply-0.5.3-20260921.py`. The code-only hash-pinned helper preserves policy, credentials, flags and accounting while disabling/restarting, backing up/updating, then enabling/restarting. Details: `docs/interaction-fix.md` and `/tmp/liberdus-interaction-fix-20260921.md`. Old release bundles remain intact; GitHub push is pending.
+
+TODO: install 0.5.3; open a saved incident to view the new grouping; save the intended staff assessment and verify its private completion reply. Optionally verify the formatted manual-delete confirmation/result with a fresh test message. Do not repeat completed deletion checks just to clear old thinking placeholders.

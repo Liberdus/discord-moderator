@@ -136,10 +136,10 @@ def propose(engine, identity, revision, kind, actor, channel_id, message_id=None
         store.db.execute('INSERT INTO action_proposals_v1 VALUES(?,?,?,NULL,?,\'pending\',?)',
                          (token, actor, channel_id, engine._now()+60, json.dumps(payload)))
     title = 'Confirm message deletion' if kind == 'delete' else 'Confirm 10-minute timeout'
-    lines = [f"Incident: {identity}", f"Revision: {revision}", f"Member: {payload['author_id']}"]
+    lines = ["ACTION", "--------------------------------", f"Revision: {revision}", "Member ID", payload['author_id']]
     lines += ([f"Delete {len(payload['evidence'])} message(s).", 'Deletion cannot be undone.'] if kind == 'delete'
               else ['10-minute SERVER-WIDE timeout.', 'No automatic account penalties.'])
-    text = panel(title, lines + ['Only you can confirm. Expires in 60 seconds.'])
+    text = panel(title, lines + ['', 'Only you can confirm.', 'Expires in 60 seconds.', '', 'REFERENCE', '--------------------------------', 'Incident ID', identity])
     for index, item in enumerate(payload['evidence'], 1):
         url = f"https://discord.com/channels/{engine.config.guild_id}/{item['channel_id']}/{item['message_id']}"
         text += f"\n[Message {index}: {item['message_id']}](<{url}>)"

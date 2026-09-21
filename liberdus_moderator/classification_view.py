@@ -249,11 +249,13 @@ def format_incident(incident, *, details=False):
         footer += "*JEV is historical: " + REASONS[classification["reason"]] + ".*\n"
     if incident["rule_id"] == "jev_message":
         footer += "*Possible concern only; link destinations not checked.*\n"
-    footer += ("**Staff assessment - does this need attention?**\n"
+    footer += ("**Staff assessment · top row**\n"
                "Needs attention: possible issue. Looks okay: acceptable. Unsure: more context.\n"
                f"*Assessment of revision {incident['revision']}; no action; no new AI call.*\n"
                "Pending reviews: `!mod pending`\n"
-               "Delete/Timeout need confirmation. Dismiss closes this review.")
+               "\n**Actions · bottom row**\n"
+               "Delete: remove message(s). Timeout: restrict member for 10 min server-wide.\n"
+               "Both need confirmation. Dismiss closes review only.")
     remaining = 1900 - units(body + footer)
     evidence = format_saved_box(incident.get("evidence_view", {}), incident, remaining)
     result = body + evidence + footer

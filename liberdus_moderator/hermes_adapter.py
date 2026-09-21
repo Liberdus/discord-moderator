@@ -36,7 +36,7 @@ def assessment_buttons(engine=None):
     view = discord.ui.View(timeout=None)
     labels = {"needs-attention": "Needs attention", "looks-okay": "Looks okay", "unsure": "Unsure"}
     for identity, label in REVIEW_BUTTONS.items():
-        view.add_item(discord.ui.Button(label=labels[label], style=discord.ButtonStyle.secondary, custom_id=identity))
+        view.add_item(discord.ui.Button(label=labels[label], style=discord.ButtonStyle.secondary, custom_id=identity, row=0))
     if engine is not None:
         for identity, name in ACTION_BUTTONS.items():
             label = {"delete": "Delete message(s)", "dismiss": "Dismiss", "timeout": "Timeout 10 min"}[name]
@@ -355,13 +355,15 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
     async def interaction_notice(self, interaction, content, *, deferred=False):
         proposal = getattr(content, "proposal", None)
         view = confirm_buttons(proposal) if proposal else None
+        # Webhook.send rejects view=None; omit it for plain completion replies.
+        options = {"view": view} if view is not None else {}
         try:
             if deferred:
                 sent = await asyncio.wait_for(interaction.followup.send(framed(content), ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(), view=view, wait=True), timeout=10)
+                    allowed_mentions=discord.AllowedMentions.none(), wait=True, **options), timeout=10)
             else:
                 await asyncio.wait_for(interaction.response.send_message(framed(content), ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(), view=view), timeout=10)
+                    allowed_mentions=discord.AllowedMentions.none(), **options), timeout=10)
                 sent = None
             if proposal and sent is not None:
                 actions.bind(self.live.engine, proposal, str(sent.id))

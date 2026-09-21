@@ -1,4 +1,4 @@
-Latest: **0.5.2** fixes the unsupported argument on Discord message deletion and prevents local request-construction errors from leaving attempts at `sending`. Regression tests now execute the actual Discord SDK deletion method with only HTTP mocked. See [installation and a fresh live check](docs/delete-call-fix.md). The 0.5.1 missing-role comparison fix is retained; successful live deletion remains unverified.
+Latest: **0.5.3** fixes stuck button-completion replies, separates staff assessment and action controls into explicit rows with labelled instructions, and formats confirmation/result replies for mobile. See [the interaction update](docs/interaction-fix.md). The owner has now verified both automatic deletion and staff-confirmed deletion on 0.5.2.
 
 # Liberdus Discord Moderator
 

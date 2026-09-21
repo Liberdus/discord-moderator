@@ -354,6 +354,59 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.guild.fetch_member.assert_awaited_once_with(50)
         self.member.timeout.assert_awaited_once()
 
+    async def sdk_notice(self, content):
+        from discord.webhook.async_ import async_context
+        state=Mock();state.allowed_mentions=discord.AllowedMentions.none()
+        state._get_guild.return_value=None
+        state.store_user.side_effect=lambda data, **kw:discord.User(state=state,data=data)
+        webhook=discord.Webhook(dict(id='99',type=3,token='synthetic',channel_id='20'),session=Mock(),state=state)
+        result=dict(id='701',channel_id='20',type=0,content='result',attachments=[],embeds=[],
+            edited_timestamp=None,tts=False,pinned=False,mention_everyone=False,mentions=[],mention_roles=[],
+            author=dict(id='99',username='testbot',discriminator='0',avatar=None,bot=True))
+        transport=SimpleNamespace(execute_webhook=AsyncMock(return_value=result))
+        token=async_context.set(transport)
+        try:
+            interaction=SimpleNamespace(followup=webhook)
+            await self.adapter.interaction_notice(interaction,content,deferred=True)
+        finally:
+            async_context.reset(token)
+        transport.execute_webhook.assert_awaited_once()
+        return transport.execute_webhook.call_args.kwargs
+
+    async def test_plain_completion_uses_actual_webhook_without_empty_view(self):
+        from liberdus_moderator.display import panel
+        for title in ('Staff action result','Action cancelled','Staff assessment saved'):
+            sent=await self.sdk_notice(panel(title,['Completed.']))
+            self.assertFalse(sent['with_components'])
+            self.assertTrue(sent['wait'])
+            self.assertEqual(sent['payload']['flags'] & 64,64)
+            self.assertEqual(sent['payload']['allowed_mentions']['parse'],[])
+            self.assertIn(title,sent['payload']['content'])
+            self.assertIn('```',sent['payload']['content'])
+
+    async def test_confirmation_uses_actual_webhook_and_binds_returned_message(self):
+        incident=self.pattern();self.toggle('deletion')
+        content=actions.propose(self.adapter.live.engine,incident['id'],incident['revision'],'delete',self.operator,'20')
+        sent=await self.sdk_notice(content)
+        self.assertTrue(sent['with_components'])
+        self.assertEqual(len(sent['payload']['components'][0]['components']),2)
+        row=self.adapter.store.db.execute('SELECT message_id FROM action_proposals_v1 WHERE token=?',
+            (content.proposal['token'],)).fetchone()
+        self.assertEqual(row['message_id'],'701')
+
+    async def test_assessment_and_action_buttons_have_explicit_separate_rows(self):
+        from liberdus_moderator.hermes_adapter import assessment_buttons
+        view=assessment_buttons(self.adapter.live.engine)
+        try:
+            rows=view.to_components()
+            self.assertEqual(len(rows),2)
+            self.assertEqual([item['label'] for item in rows[0]['components']],['Needs attention','Looks okay','Unsure'])
+            self.assertEqual([item['label'] for item in rows[1]['components']],['Delete message(s)','Dismiss','Timeout 10 min'])
+            self.assertTrue(rows[1]['components'][0]['disabled'])
+            self.assertTrue(rows[1]['components'][2]['disabled'])
+        finally:
+            view.stop()
+
     def interaction(self,custom,identity=800,author=98,message=700):
         return SimpleNamespace(id=identity,type=discord.InteractionType.component,data={'component_type':2,'custom_id':custom},
             guild_id=1,channel_id=20,user=SimpleNamespace(id=author,bot=False),

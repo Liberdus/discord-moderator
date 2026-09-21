@@ -201,7 +201,7 @@ class StaffReviewTests(unittest.TestCase):
         self.assertIn("scams.", text)
         self.assertNotIn("scams\\.", text)
         self.assertIn("Reviewed by <@98>", text)
-        self.assertIn("Staff assessment - does this need attention?", text)
+        self.assertIn("Staff assessment · top row", text)
         self.assertIn("Needs attention: possible issue", text)
         self.assertLessEqual(units(text), 1900)
 

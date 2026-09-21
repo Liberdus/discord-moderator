@@ -159,7 +159,7 @@ class ActionTransport:
                 self.action_deletions.clear()
                 self.finish_own_deletions()
         return panel('Automatic deletion' if payload['automatic'] else 'Staff action result',
-                     [*completed, 'Incident:', payload['incident_id'], f"By: {payload['actor']}",
+                     ['RESULT', '--------------------------------', *completed, '', 'REFERENCE', '--------------------------------', 'Incident ID', payload['incident_id'], f"By: {payload['actor']}",
                       'No new AI call. Attempts are saved.', 'Audit: !mod actions ID'])
 
     def finish_own_deletions(self):
@@ -206,7 +206,7 @@ class ActionTransport:
             self.checked_channel(event.channel_id, sending=True)
             payload = actions.consume(self.live.engine, token, event.user_id, event.channel_id,
                                       str(interaction.message.id), cancel=cancel)
-            text = 'Action cancelled. No changes made.' if cancel else await self.perform_action(payload)
+            text = panel('Action cancelled', ['No changes made.']) if cancel else await self.perform_action(payload)
             if not cancel:
                 refresh = AssessmentText('', {'incident_id': payload['incident_id']})
                 await self.refresh_assessment_messages(refresh, event)

@@ -198,11 +198,14 @@ class LiveSession:
         if event.command in ("assess", "dismiss"):
             from .staff_review import LABELS
             assessment = response["data"]
-            text = (f"**Staff assessment saved**\n{LABELS[assessment['label']]}\n"
-                    f"Reviewed revision: {assessment['revision']} ({assessment['state']})\n"
-                    f"Latest evidence: {'review complete' if assessment['latest_complete'] else 'still pending'}\n"
-                    f"Incident: `{assessment['incident_id']}`\nReviewed by <@{assessment['reviewer_id']}>\n"
-                    "No moderation action or new AI call. Pending reviews: `!mod pending`.")
+            from .display import panel
+            text = panel("Staff assessment saved", [
+                "REVIEW", "--------------------------------", LABELS[assessment['label']],
+                f"Reviewed revision: {assessment['revision']} ({assessment['state']})",
+                f"Latest evidence: {'review complete' if assessment['latest_complete'] else 'still pending'}",
+                "", "REFERENCE", "--------------------------------", "Incident ID", assessment['incident_id'],
+                "Reviewer ID", assessment['reviewer_id'], "",
+                "No moderation action or new AI call.", "Pending reviews: !mod pending"])
             return AssessmentText(text, assessment)
         if event.command == "review":
             from .moderator_review import LABELS

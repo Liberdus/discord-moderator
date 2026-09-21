@@ -1,3 +1,5 @@
+> **Live result confirmed:** the owner verified automatic and staff-confirmed deletion on 0.5.2. For the remaining stuck interaction reply and display update, use [0.5.3](interaction-fix.md).
+
 # Discord deletion call fix — 0.5.2
 
 After the 0.5.1 comparison fix, the owner reported incident `02826060703e43068852f811c16c3a43` showing `Auto delete: sending` followed by “Action unavailable or verification failed.” The message remained visible.
