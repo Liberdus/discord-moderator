@@ -17,7 +17,7 @@ WINDOW_SECONDS = 300
 ALERT_INTERVAL_SECONDS = 300
 FAILURE_THRESHOLD = 3
 MAX_COUNT = 2**63 - 1
-GAP_REASONS = frozenset({'disconnect', 'queue_full', 'worker_failure', 'unavailable_edit', 'invalid_event', 'restart_lost'})
+GAP_REASONS = frozenset({'disconnect', 'queue_full', 'worker_failure', 'unavailable_edit', 'invalid_event', 'restart_lost', 'scope_changed'})
 AUTH_FAILURES = frozenset({'missing_key', 'authentication_failed', 'access_denied'})
 FAILURE_LABELS = {
     'missing_key': 'API key unavailable', 'authentication_failed': 'API authentication rejected',
@@ -37,6 +37,7 @@ GAP_LABELS = {
     'disconnect': 'Discord disconnected', 'queue_full': 'Queue overflow',
     'worker_failure': 'Moderation worker stopped', 'unavailable_edit': 'Edited message unavailable',
     'invalid_event': 'Unsupported incoming event',
+    'scope_changed': 'Channel scope or access changed',
     'restart_lost': 'Restarts with unfinished checks',
 }
 REASON_LABELS = {

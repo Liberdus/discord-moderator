@@ -318,12 +318,10 @@ class ScreeningTests(unittest.IsolatedAsyncioTestCase):
         self.provider.assert_awaited_once()
 
     def test_empty_exemption_preserves_existing_policy_hash_and_invalid_roles_rejected(self):
-        from dataclasses import asdict
         original = config()
-        data = asdict(original)
-        del data["classifier"]["exempt_role_ids"]
-        expected = hashlib.sha256(json.dumps(data,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
-        self.assertEqual(original.policy_hash, expected)
+        # Captured with the previous 0.5.5 Config; new default scope fields must not reset evidence.
+        self.assertEqual(original.policy_hash,
+            "d46c05564662ad27dc5bdaa5e21b5e2f2a6a37319a5fda6ffb8ab537a2bba96a")
         for roles in (("not-a-role",), ("0",), ("88","88"), "88"):
             with self.assertRaises(ValueError): config(exempt_role_ids=roles)
 

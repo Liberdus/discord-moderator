@@ -16,7 +16,7 @@ def policy_text(config):
     """Serialize only the validated policy schema, including scoped exceptions."""
     data = asdict(config)
     scope_names = ("guild_id", "bot_user_id", "monitored_channel_ids", "command_channel_ids",
-                   "operator_user_ids", "operator_role_ids", "log_channel_id")
+                   "operator_user_ids", "operator_role_ids", "log_channel_id", "excluded_category_ids")
     scope = {name: data.pop(name) for name in scope_names}
     tables = {name: data.pop(name) for name in ("storage", "rules", "classifier")}
     if config.schema_version == 1:
@@ -169,8 +169,8 @@ def configure_screening(profile, operation="screen"):
         regular_owned(path)
     manifest = yaml.safe_load(manifest_path.read_text())
     if (manifest.get("name") != "liberdus-moderator" or manifest.get("version") != __version__
-            or __version__ != "0.5.5"):
-        raise ValueError("Install the reviewed 0.5.5 update first")
+            or __version__ != "0.5.6"):
+        raise ValueError("Install the reviewed 0.5.6 update first")
     default = yaml.safe_load(default_path.read_text())
     if default.get("platforms", {}).get("discord", {}).get("enabled") is not False:
         raise ValueError("Default stock Discord must remain disabled")

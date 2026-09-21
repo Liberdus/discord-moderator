@@ -70,6 +70,7 @@ class SavedClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(max(map(len, panel.splitlines())), 32)
         self.assertIn("Incident ID\n" + self.identity, text)
         self.assertIn("no new AI call", text)
+        self.assertIn("Deletion and timeouts are disabled.", text)
         self.assertIn("claim a reward", text)
         self.assertIn("[Open message 1](<https://discord.com/channels/1/10/100>)", text)
         self.assertNotIn("@everyone", text)

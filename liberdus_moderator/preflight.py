@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 
 from .config import Config
+from .models import validate_id
 
 VIEW = 1 << 10
 SEND = 1 << 11
@@ -125,19 +126,42 @@ def inspect(config, get):
     if member.get("user", {}).get("id") != config.bot_user_id:
         raise PreflightError("Bot guild membership did not match configuration.")
     results = []
+    category_checks = {}
+    guarded_scope = config.allow_public_monitored_channels or bool(config.excluded_category_ids)
     for channel_id in (*config.monitored_channel_ids, *config.command_channel_ids):
         channel = get(f"/channels/{channel_id}")
         if (channel.get("id") != channel_id or channel.get("guild_id") != config.guild_id
-                or channel.get("type") != 0):
+                or type(channel.get("type")) is not int or channel.get("type") != 0):
             raise PreflightError("A configured channel is not a text channel in the configured server.")
+        category_id = channel.get("parent_id")
+        if guarded_scope:
+            if "parent_id" not in channel:
+                raise PreflightError("A configured channel has unavailable category metadata.")
+            if category_id is not None:
+                try:
+                    validate_id(category_id, "category_id")
+                except (ValueError, TypeError):
+                    raise PreflightError("A configured channel has invalid category metadata.") from None
+                if category_id not in category_checks:
+                    category = get(f"/channels/{category_id}")
+                    if (not isinstance(category, dict) or category.get("id") != category_id
+                            or category.get("guild_id") != config.guild_id or category.get("type") != 4):
+                        raise PreflightError("A configured channel's category could not be verified.")
+                    category_checks[category_id] = True
+        command_channel = channel_id in config.command_channel_ids
+        private_required = command_channel or not config.allow_public_monitored_channels
         bits = permissions(guild, member["roles"], config.bot_user_id, channel)
         required = VIEW | HISTORY
-        if channel_id in config.command_channel_ids:
+        if command_channel:
             required |= SEND
         everyone = permissions(guild, [], None, channel)
         results.append({
             "channel_id": channel_id,
-            "purpose": "commands_and_reports" if channel_id in config.command_channel_ids else "monitoring",
+            "purpose": "commands_and_reports" if command_channel else "monitoring",
+            "category_id": category_id,
+            "category_allowed": category_id not in config.excluded_category_ids,
+            "private_required": private_required,
+            "public_required": not private_required,
             "bot_view": bool(bits & VIEW),
             "bot_read_history": bool(bits & VIEW and bits & HISTORY),
             "bot_send": bool(bits & VIEW and bits & SEND),
@@ -152,7 +176,8 @@ def inspect(config, get):
     return {
         "bot_identity_matches": True, "guild_id": config.guild_id,
         "channels": results,
-        "checks_passed": all(r["required_permissions_ok"] and r["everyone_hidden"]
+        "checks_passed": all(r["required_permissions_ok"] and r["category_allowed"]
+                             and r["everyone_hidden"] == r["private_required"]
                              and not r["bot_administrator"] for r in results),
         "limitations": "No messages read or sent. Other role membership, gateway intents, and live moderation remain unverified.",
     }

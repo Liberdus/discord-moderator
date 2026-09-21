@@ -1,4 +1,4 @@
-Latest: **0.5.5** adds automatic private notices for interrupted JEV coverage and `!mod summary` for saved moderation counts and clearly scoped live/evaluation cost estimates. Neither makes new AI calls or changes action policy, flags or budgets. See [health alerts, summary and owner installation](docs/health-and-summary.md). The 0.5.4 review fixes remain included.
+Latest prepared: **0.5.6** adds an explicit observation rollout to eligible public Liberdus text channels, excluding Committers (`1318586868136415333`) and disabling all Discord moderation actions. Reports stay in private `bot-mod`; new channels are not added automatically. [Inventory, saved plan and owner rollout instructions](docs/public-observation.md). The live channel list and deployment are not yet verified; installing code alone preserves the private pilot. Existing [health notices and summary](docs/health-and-summary.md) remain available.
 
 # Liberdus Discord Moderator
 

@@ -54,7 +54,7 @@ class LiveSession:
 
     def gap(self, reason):
         if reason not in {"startup", "disconnect", "reconnect", "queue_full", "unavailable_edit",
-                          "deleted_message", "invalid_event", "worker_failure"}:
+                          "deleted_message", "invalid_event", "worker_failure", "scope_changed"}:
             raise ValueError("Unknown coverage gap")
         now = self.engine._now()
         with self.store.transaction():

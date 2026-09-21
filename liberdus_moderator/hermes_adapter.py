@@ -101,6 +101,15 @@ class PilotClient(discord.Client):
     async def on_message(self, message):
         self.adapter.receive(message)
 
+    async def on_guild_channel_update(self, before, after):
+        self.adapter.channel_changed(after)
+
+    async def on_guild_channel_delete(self, channel):
+        self.adapter.channel_changed(channel)
+
+    async def on_guild_channel_create(self, channel):
+        self.adapter.channel_changed(channel)
+
     async def on_interaction(self, interaction):
         await self.adapter.receive_review_click(interaction)
 
@@ -134,6 +143,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         self.queue = asyncio.Queue(maxsize=200)
         self.ready_event = asyncio.Event()
         self.generation = 0
+        self.monitored_scope_signature = None
         self.online = False
         self.closing = False
         self.lock_fd = None
@@ -225,18 +235,27 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         if (not self.online or self.closing or (self.policy.classifier.mode == "shadow"
                 and (not self.queue.empty() or self.processing_evidence))):
             return False
-        return self.policy_current()
+        if self.guarded_scope():
+            try:
+                for identity in self.policy.command_channel_ids:
+                    self.checked_channel(identity, sending=True)
+            except (ValueError, AttributeError, TypeError):
+                return False  # Do not spend on screening without a private report destination.
+        return self.scope_current() and self.policy_current()
 
     def policy_current(self):
         """Recheck disk activation and policy before privileged local controls."""
         try:
             path = get_hermes_home() / "moderation.toml"
             return (not path.is_symlink() and explicit_activation()
-                    and Config.from_file(path).policy_hash == self.policy.policy_hash)
+                    and Config.from_file(path).policy_hash == self.policy.policy_hash
+                    and self.scope_current())
         except (OSError, ValueError, TypeError):
             return False
 
     async def evaluate_jev(self, payload):
+        if not self.classifier_active():
+            raise ValueError("Moderation scope changed before JEV request")
         from .jev import evaluate
         # The generic helper permits process-env fallback outside multiplexing.
         # JEV must always use only this adapter task's installed profile scope.
@@ -245,6 +264,8 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         return await evaluate(payload, key, self.policy.classifier.timeout_seconds)
 
     def process_evidence(self, evidence):
+        if self.guarded_scope() and not self.in_scope(evidence.guild_id, evidence.channel_id):
+            return {"disposition": "ignored", "reason": "outside_current_scope", "incident_ids": []}
         result = self.live.engine.process(evidence)
         if self.classifier is not None:
             if self.policy.classifier.mode == "report_only":
@@ -273,22 +294,81 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             if not self.closing:
                 await self.fail("discord_connection_failed")
 
+    def guarded_scope(self):
+        return bool(self.policy and (self.policy.allow_public_monitored_channels or self.policy.excluded_category_ids))
+
     def checked_channel(self, channel_id, *, sending=False):
         allowed = self.policy.command_channel_ids if sending else (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids)
         if channel_id not in allowed:
-            raise ValueError("Channel outside pilot scope")
+            raise ValueError("Channel outside configured scope")
         channel = self.client.get_channel(int(channel_id))
-        if not isinstance(channel, discord.TextChannel) or str(channel.guild.id) != self.policy.guild_id:
-            raise ValueError("Pilot text channel unavailable")
+        if (not isinstance(channel, discord.TextChannel) or str(channel.guild.id) != self.policy.guild_id
+                or getattr(channel.guild, "unavailable", False) is True):
+            raise ValueError("Configured text channel unavailable")
+        if self.guarded_scope():
+            # TextChannel also represents announcement channels. Public collection
+            # is restricted to ordinary text channels with known current metadata.
+            if channel.type != discord.ChannelType.text:
+                raise ValueError("Only ordinary guild text channels are monitored")
+            category_id = getattr(channel, "category_id", ...)
+            if category_id is not None:
+                if type(category_id) is not int or category_id <= 0:
+                    raise ValueError("Channel category metadata unavailable")
+                if str(category_id) in self.policy.excluded_category_ids:
+                    raise ValueError("Channel belongs to an excluded category")
+                category = getattr(channel, "category", None)
+                if (not isinstance(category, discord.CategoryChannel)
+                        or category.id != category_id or str(category.guild.id) != self.policy.guild_id):
+                    raise ValueError("Channel category cache unavailable")
         me = channel.guild.me
         if me is None:
             raise ValueError("Bot membership unavailable")
         perms = channel.permissions_for(me)
         everyone = channel.permissions_for(channel.guild.default_role)
-        if (perms.administrator or everyone.view_channel or not perms.view_channel or not perms.read_message_history
-                or (sending and not perms.send_messages)):
-            raise ValueError("Pilot permissions no longer match")
+        public_allowed = self.policy.allow_public_monitored_channels and channel_id in self.policy.monitored_channel_ids
+        if (perms.administrator or (everyone.view_channel and not public_allowed)
+                or (public_allowed and not everyone.view_channel)
+                or not perms.view_channel or not perms.read_message_history or (sending and not perms.send_messages)):
+            raise ValueError("Configured channel permissions no longer match")
         return channel
+
+    def current_scope_signature(self):
+        # Bound to the explicit policy IDs: new guild channels never join scope.
+        signature = []
+        for identity in (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids):
+            try:
+                channel = self.checked_channel(identity, sending=identity in self.policy.command_channel_ids)
+                signature.append((identity, True, channel.category_id))
+            except (ValueError, AttributeError, TypeError):
+                signature.append((identity, False, None))
+        return tuple(signature)
+
+    def scope_current(self):
+        # Pure after initial capture: safe during the classifier's SQLite transaction.
+        # A changed cache stops outbound calls/results before the gateway callback runs.
+        if not self.guarded_scope():
+            return True
+        signature = self.current_scope_signature()
+        if self.monitored_scope_signature is None:
+            self.monitored_scope_signature = signature
+        return signature == self.monitored_scope_signature
+
+    def refresh_scope(self):
+        if not self.guarded_scope():
+            return False
+        signature = self.current_scope_signature()
+        prior = self.monitored_scope_signature
+        self.monitored_scope_signature = signature
+        if prior is not None and signature != prior:
+            self.coverage_gap("scope_changed")
+            return True
+        return False
+
+    def channel_changed(self, channel):
+        if (self.policy is None or self.closing or not self.guarded_scope()
+                or str(getattr(getattr(channel, "guild", None), "id", "")) != self.policy.guild_id):
+            return
+        self.refresh_scope()
 
     async def ready(self):
         if self.closing:
@@ -297,9 +377,16 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             if str(self.client.user.id) != self.policy.bot_user_id:
                 raise ValueError("Bot identity mismatch")
             for channel in self.policy.monitored_channel_ids:
-                self.checked_channel(channel)
+                try:
+                    self.checked_channel(channel)
+                except ValueError:
+                    if not self.guarded_scope():
+                        raise
+                    # Moved, removed, inaccessible, or unknown monitors are excluded
+                    # individually. The private report destination must still be valid.
             for channel in self.policy.command_channel_ids:
                 self.checked_channel(channel, sending=True)
+            self.refresh_scope()
             if self.online:
                 return
             self.coverage_gap("reconnect")
@@ -339,8 +426,15 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         self._mark_disconnected()
 
     def in_scope(self, guild_id, channel_id):
-        return (self.online and guild_id is not None and str(guild_id) == self.policy.guild_id
-                and str(channel_id) in (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids))
+        if not (self.online and guild_id is not None and str(guild_id) == self.policy.guild_id
+                and str(channel_id) in (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids)):
+            return False
+        if self.guarded_scope():
+            try:
+                self.checked_channel(str(channel_id), sending=str(channel_id) in self.policy.command_channel_ids)
+            except (ValueError, AttributeError, TypeError):
+                return False
+        return True
 
     @staticmethod
     def stop_control(event):
@@ -450,6 +544,8 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         task.add_done_callback(self.notice_tasks.discard)
 
     def receive(self, message):
+        if self.guarded_scope() and str(getattr(message.guild, "id", "")) == self.policy.guild_id:
+            self.refresh_scope()
         if (not self.in_scope(getattr(message.guild, "id", None), message.channel.id)
                 or message.author.bot or message.webhook_id is not None):
             return
@@ -477,10 +573,14 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             self.coverage_gap("invalid_event")
 
     def edit(self, guild_id, channel_id, message_id):
+        if self.guarded_scope() and str(guild_id) == self.policy.guild_id:
+            self.refresh_scope()
         if self.in_scope(guild_id, channel_id) and str(channel_id) in self.policy.monitored_channel_ids:
             self.enqueue("edit", (str(channel_id), int(message_id)))
 
     def deleted(self, guild_id, channel_id, message_ids):
+        if self.guarded_scope() and str(guild_id) == self.policy.guild_id:
+            self.refresh_scope()
         if all(str(identity) in self.action_deletions for identity in message_ids):
             return  # The bounded action batch invalidates coverage on completion.
         if self.in_scope(guild_id, channel_id) and str(channel_id) in self.policy.monitored_channel_ids:
@@ -667,6 +767,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
 
     async def flush_reports(self):
         while self.online:
+            self.refresh_scope()
             report = self.live.claim_report()
             if report is None:
                 return
@@ -688,6 +789,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             while True:
                 generation, kind, value = await self.queue.get()
                 try:
+                    self.refresh_scope()
                     if kind == "stop_reply":
                         replies, self.stop_replies = self.stop_replies, {}
                         self.stop_reply_pending = False
@@ -745,6 +847,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
                                 except (discord.HTTPException, ValueError, TypeError, AttributeError, TimeoutError):
                                     pass  # Keep code-rule evidence; unknown membership cannot enter JEV.
                                 evidence = snapshot(message, author_role_ids=roles)
+                            self.refresh_scope()
                             if generation == self.generation and self.online:
                                 result = self.process_evidence(evidence)
                                 if result["reason"] == "conflicting_event_version":

@@ -34,10 +34,9 @@ def shadow_config(**settings):
 class ClassifierConfigTests(unittest.TestCase):
     def test_explicit_migration_and_off_gate(self):
         original = Config("1", "99", ("10", "11", "12"), ("20",), ("98",))
-        old_data = asdict(original)
-        del old_data["classifier"]
-        old_hash = hashlib.sha256(json.dumps(old_data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
-        self.assertEqual(original.policy_hash, old_hash)
+        # Captured with the previous 0.5.5 Config, before public-scope fields existed.
+        self.assertEqual(original.policy_hash,
+            "d77a496559934ce9637a3e343e9455d3c69496e20e6de199c25ee165fdc0ce09")
         for change in ({"ai_enabled": True}, {"actions_enabled": True},
                        {"classifier": ClassifierSettings(max_daily_calls=1)}):
             with self.subTest(change=change), self.assertRaises(ValueError):

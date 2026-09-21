@@ -253,9 +253,12 @@ def format_incident(incident, *, details=False):
                "Needs attention: possible issue. Looks okay: acceptable. Unsure: more context.\n"
                f"*Assessment of revision {incident['revision']}; no action; no new AI call.*\n"
                "Pending reviews: `!mod pending`\n"
-               "\n**Actions · bottom row**\n"
-               "Delete: remove message(s). Timeout: restrict member for 10 min server-wide.\n"
-               "Both need confirmation. Dismiss closes review only.")
+               "\n**Actions · bottom row**\n")
+    if incident.get("actions_enabled") is False:
+        footer += "Deletion and timeouts are disabled. Dismiss closes review only."
+    else:
+        footer += ("Delete: remove message(s). Timeout: restrict member for 10 min server-wide.\n"
+                   "Both need confirmation. Dismiss closes review only.")
     remaining = 1900 - units(body + footer)
     evidence = format_saved_box(incident.get("evidence_view", {}), incident, remaining)
     result = body + evidence + footer
