@@ -61,6 +61,8 @@ The owner supplied the focused `official_wallet_transfer` retry: a valid `impers
 
 ## Verification and remaining work
 
+The owner subsequently supplied live status and summary replies showing version 0.5.5 and an active Discord connection. Both command paths are confirmed in that supplied output. Automatic health failure/recovery delivery was not exercised by those replies. The working Hermes deployment is retained; standalone hosting is a deferred nice-to-have in BUILD_PLAN section 10.39.
+
 Automated checks use disposable stores/profiles and mocked Discord/JEV boundaries. They cover health grouping, thresholds, outage/recovery behavior, delivery uncertainty and summary scope/read behavior. Owner deployment is separate from those checks; no live outage or real provider call was induced to test this feature.
 
 - **511 automated tests passed:** 359 core/setup and 152 integration tests against the pinned Hermes/Discord runtime. The focused health checks were rerun after the final notice wording change.

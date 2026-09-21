@@ -1267,3 +1267,25 @@ Owner installation: python3 /tmp/liberdus-apply-0.5.5-20260921.py. The hash-pinn
 Validation: 359 core/setup plus 152 pinned-runtime integration tests passed (511 total), including health, summary, restart-loss, lifecycle and upgrade regressions. Focused health checks passed after final notice wording. Final update-bundle SHA-256: 27e7da1ecf1e46775eda9c052ecc0040044f529770b80e737898c0187f4a4e1c. Both runtime copies in the ZIP match tested source byte-for-byte; archive integrity and module compilation passed. The owner helper pins that hash. Tests use isolated stores/profiles and mocked Discord/provider boundaries; no developer live profile/key access, real provider call, service restart or Discord mutation is claimed.
 
 Remaining work: owner deployment of 0.5.5; retain the private pilot and current sensitive-request automatic-delete threshold; use a distinct suite and held-out examples for any future rubric changes. Real server timeout permission validation remains separate, timeout stays under its existing configured flag, and any combined delete-and-timeout workflow still needs its own design. No bans, kicks, automatic timeouts, new channels or broader enforcement were added.
+
+
+### 10.39 — Confirm live 0.5.5 commands; defer standalone hosting (2026-09-21)
+
+The owner supplied live `!mod status` and `!mod summary` replies showing version 0.5.5, connected, JEV report_only/ready, deletion and automatic deletion ON, staff timeout OFF and role exemption OFF. This completes the owner-deployment item in 10.38 for the observed version and command paths. Automatic health notices have offline regression coverage; these replies do not themselves establish a live failure/recovery notice.
+
+The supplied summary records 15 checked live versions, 45 retained evaluation attempts and 60 shared screening calls. The separate 78 AI-attempt counter includes 18 earlier shadow/batch attempts. Known live/evaluation estimates total $0.002278; the original failed evaluation retains its $0.002753 unknown-cost reservation, giving $0.005031 shared used/reserved accounting. These are estimates/reservations, not an invoice. Retained actions show two completed automatic deletions, two completed staff deletions, one uncertain deletion and none sending. Do not retry the uncertain action solely to clear that count. It is a saved historical outcome, not evidence that a current action is stuck.
+
+**Owner decision:** retain the working Hermes plugin deployment. A standalone live service is a nice-to-have for later, not an active implementation or migration. The repository already exists independently as Liberdus/discord-moderator; Hermes currently supplies profile/configuration/secret scope, plugin and gateway lifecycle, connection status integration, credential locking and runtime dependencies. The plugin owns Discord handling and calls JEV directly; it does not dispatch conversational Hermes LLM turns. A future standalone runner would need independent startup/shutdown, configuration and secret loading, dependency/service packaging and updated deployment helpers while preserving existing moderation behavior and state.
+
+Deferred nice-to-have:
+
+- [ ] Add a standalone live service option in the existing repository when the owner chooses to revisit it. Keep the working Hermes deployment in place meanwhile.
+
+Recommended next work, still planning rather than permission to expand access or enforcement:
+
+1. Prepare a short staff guide covering JEV suggestions, Needs attention / Looks okay / Unsure, Dismiss versus Delete, confirmations, pending reviews, pause and summary. Explain that an assessment records judgment without taking an action or training JEV.
+2. Agree on a small staff pilot in the existing private test channels: participants, separately authorized operator access, responsibility for pending reviews and what feedback to collect. Use representative conversation and staff review rather than repeating completed deletion/spam tests. An idle channel alone provides no new classification evidence.
+3. Review unnecessary reports, missed concerns reported by staff, uncertain cases and review workload. Use reviewed examples to select future independently labelled evaluation cases; do not directly equate broad staff assessments with JEV's purpose/concern labels or automatically tune thresholds.
+4. After that review, decide whether to prepare a separately approved rollout to one real channel with automatic actions disabled for its initial observation period. Current private scope and action settings remain unchanged by this planning note.
+
+Staff timeout permission verification remains a separate optional step before enabling that feature. Combined delete-and-timeout behavior and broader account penalties remain deferred. No bot code, runtime settings, credentials, budgets, service state or Discord permissions were changed for this checkpoint.
