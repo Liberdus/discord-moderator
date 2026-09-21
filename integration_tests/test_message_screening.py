@@ -150,7 +150,7 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.classifier.start()
         for i,channel in enumerate((10,11,12)):
             message=self.message(800+i,channel)
-            message.author.roles=[SimpleNamespace(id=1),SimpleNamespace(id=1302455329795342377)]
+            message.author._roles=[1302455329795342377]
             self.adapter.receive(message)
         await self.screened()
         self.provider.assert_not_awaited()

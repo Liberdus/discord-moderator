@@ -38,6 +38,12 @@ class Engine:
             raise ValueError("Clock must return a positive finite Unix timestamp")
         return float(value)
 
+    def role_evidence_available(self, roles):
+        # Adapter snapshots include @everyone for known membership. Empty IDs
+        # mean unknown, which must not bypass an enabled exemption in either JEV mode.
+        return (bool(roles) or not self.config.classifier.exempt_role_ids
+                or self.store.get_setting("role_exemption_enabled", True) is not True)
+
     def role_exempt(self, roles):
         return (self.store.get_setting("role_exemption_enabled", True) is True
                 and bool(set(roles) & set(self.config.classifier.exempt_role_ids)))

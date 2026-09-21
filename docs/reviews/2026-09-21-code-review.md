@@ -1,3 +1,5 @@
+> **Follow-up:** [0.5.4 review fixes](../review-fixes.md) implement corrections for F1–F5. The findings below describe the audited 0.5.3 commit; source line locations are historical. Current regression coverage is in `integration_tests/test_safety_controls.py`, `integration_tests/test_role_safety.py` and `tests/test_screening_action_matrix.py`. The separate combined-action workflow and model-accuracy limits remain.
+
 # Moderation plugin code review — September 21, 2026
 
 **Verdict: retain the private test scope and fix the safety-control and role-protection gaps before expanding the pilot or enabling staff timeouts.** The ordinary deletion paths and latest reply patch have useful automated coverage and owner-reported live success, but the passing baseline suite missed the reproduced cases below. More repetitions of the completed deletion tests are not the next priority.

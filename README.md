@@ -1,4 +1,4 @@
-Latest: **0.5.3** fixes stuck button-completion replies, separates staff assessment and action controls into explicit rows with labelled instructions, and formats confirmation/result replies for mobile. See [the interaction update](docs/interaction-fix.md). The owner has now verified both automatic deletion and staff-confirmed deletion on 0.5.2.
+Latest: **0.5.4** fixes the five code-review findings: immediate durable stop controls, canceled button completion, exact membership IDs, broader staff-timeout protection and conservative JEV exemption for edits. `!mod status` includes the version. See [review fixes and owner installation](docs/review-fixes.md). Current flags, policy and budgets are preserved.
 
 # Liberdus Discord Moderator
 

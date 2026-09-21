@@ -148,8 +148,9 @@ class LiveSession:
             status = self.status(connected)
             gap = status["last_coverage_gap"] or {"reason": "none"}
             from .display import panel
+            from . import __version__
             lines = [
-                "STATUS", "--------------------------------",
+                "STATUS", "--------------------------------", "Version: " + __version__,
                 "Mode: " + ('paused' if status['paused'] else status['mode']),
                 f"Connected: {status['live_discord_connected']}",
                 "Coverage: " + ("code + JEV (best effort)" if status['classifier_mode'] == 'report_only' else "code only"),

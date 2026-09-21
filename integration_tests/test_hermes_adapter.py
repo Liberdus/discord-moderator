@@ -93,6 +93,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.store = Store(":memory:")
         self.adapter.live = LiveSession(Engine(self.adapter.policy, self.adapter.store))
         self.adapter.online = True
+        self.adapter.policy_current = Mock(return_value=True)
         self.channel = Mock(spec=discord.TextChannel)
         self.channel.guild = SimpleNamespace(id=1, me=object(), default_role=object())
         self.channel.permissions_for.side_effect = lambda member: SimpleNamespace(
@@ -113,7 +114,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def message(self, identity=100, channel=10, author=50, content="Repeated test message with sufficient length.", **updates):
         values = dict(id=identity, channel=SimpleNamespace(id=channel), guild=SimpleNamespace(id=1),
-                      author=SimpleNamespace(id=author, bot=False), content=content,
+                      author=SimpleNamespace(id=author, bot=False, _roles=[]), content=content,
                       created_at=datetime.now(timezone.utc), edited_at=None, webhook_id=None, attachments=[])
         values.update(updates)
         return SimpleNamespace(**values)

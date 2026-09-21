@@ -1,3 +1,5 @@
+Current behavior: [0.5.4 review fixes](review-fixes.md) resolve fresh edit membership and withhold JEV when exemptions are enabled but membership is unknown. The 0.4.1 missing-role behavior and installation instructions below are historical.
+
 Current action controls and deployment: [0.5.0 moderation actions](moderation-actions.md). The older report-only instructions and checkpoints below remain historical.
 
 # JEV role exemption — 0.4.1

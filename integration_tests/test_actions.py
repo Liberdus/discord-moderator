@@ -30,10 +30,12 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
                 daily_budget_microusd=1000000,total_budget_microusd=4000000,min_interval_seconds=1))
         self.adapter.live=LiveSession(Engine(self.adapter.policy,self.adapter.store))
         self.adapter.classifier_active=Mock(return_value=True)
-        self.me=SimpleNamespace(id=99,top_role=5,guild_permissions=SimpleNamespace(moderate_members=True,administrator=False))
+        self.me=SimpleNamespace(id=99,top_role=5,_roles=[],guild_permissions=SimpleNamespace(moderate_members=True,administrator=False))
         self.guild=SimpleNamespace(id=1,me=self.me,default_role=object(),owner_id=98)
-        self.member=SimpleNamespace(id=50,guild=self.guild,bot=False,top_role=1,roles=[],timed_out_until=None,
-            guild_permissions=SimpleNamespace(administrator=False,manage_guild=False,moderate_members=False,manage_messages=False),timeout=AsyncMock())
+        self.me.guild=self.guild
+        self.guild.get_role=lambda identity:SimpleNamespace(id=identity,guild=self.guild)
+        self.member=SimpleNamespace(id=50,guild=self.guild,bot=False,top_role=1,roles=[],_roles=[],timed_out_until=None,
+            guild_permissions=SimpleNamespace(administrator=False,manage_guild=False,moderate_members=False,manage_messages=False,kick_members=False,ban_members=False,manage_roles=False,manage_channels=False),timeout=AsyncMock())
         self.guild.fetch_member=AsyncMock(return_value=self.member)
         self.channels={}
         self.messages={}
@@ -57,7 +59,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         for i,ch in enumerate((10,11,12)):
             message=self.message(100+i,ch,author=50,guild=self.guild)
             message.channel=self.channels[ch]
-            message.author.roles=[]
+            message.author._roles=[]
             message.delete=AsyncMock(side_effect=lambda **kw:None)
             self.messages[100+i]=message
             self.adapter.process_evidence(snapshot(message))
@@ -144,7 +146,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         for key,value in scenarios:
             original=getattr(self.member,key);setattr(self.member,key,value)
             await self.adapter.perform_action(payload);setattr(self.member,key,original)
-        for perm in ('administrator','manage_guild','moderate_members','manage_messages'):
+        for perm in ('administrator','manage_guild','moderate_members','manage_messages','kick_members','ban_members','manage_roles','manage_channels'):
             setattr(self.member.guild_permissions,perm,True)
             await self.adapter.perform_action(payload)
             setattr(self.member.guild_permissions,perm,False)
@@ -158,7 +160,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.live=LiveSession(Engine(self.adapter.policy,self.adapter.store))
         incident=self.pattern();payload=self.plan(incident,'timeout')
         self.adapter.store.set_setting('role_exemption_enabled',False)
-        self.member.roles=[SimpleNamespace(id=77)]
+        self.member._roles=[77]
         result=await self.adapter.perform_action(payload)
         self.assertIn('Protected member',result)
         self.member.timeout.assert_not_awaited()
@@ -199,7 +201,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
             on_result=lambda job:self.adapter.enqueue('screen_result',job))
         message=self.message(100,10,guild=self.guild,content='Send me your wallet recovery phrase.')
         message.channel=self.channels[10]
-        message.author.roles=[];message.delete=AsyncMock();self.messages[100]=message
+        message.author._roles=[];message.delete=AsyncMock();self.messages[100]=message
         self.adapter.live.engine.process(snapshot(message))
         job=self.adapter.classifier.snapshot('100')
         await self.adapter.classifier.evaluate_one(job)
@@ -222,7 +224,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
             on_result=lambda job:self.adapter.enqueue('screen_result',job))
         message=self.message(100,10,guild=self.guild,content='Send me your wallet recovery phrase.')
         message.channel=self.channels[10]
-        message.author.roles=[SimpleNamespace(id=1),SimpleNamespace(id=88)]
+        message.author._roles=[88]
         message.delete=AsyncMock();self.messages[100]=message
         self.adapter.live.engine.process(snapshot(message))
         # REST fetch has a User, while the saved gateway event had a Member.
@@ -299,7 +301,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_manual_delete_accepts_missing_rest_roles(self):
         self.pattern()
         for message in self.messages.values():
-            message.author.roles=[SimpleNamespace(id=1),SimpleNamespace(id=88)]
+            message.author._roles=[88]
             self.adapter.process_evidence(snapshot(message))
         incident=self.adapter.store.incidents()[0];payload=self.plan(incident)
         for message in self.messages.values(): message.author=SimpleNamespace(id=50,bot=False)
@@ -318,7 +320,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.guild.fetch_member.assert_awaited_once_with(50)
 
     async def test_newly_exempt_member_is_not_auto_deleted(self):
-        self.member.roles=[SimpleNamespace(id=77)]
+        self.member._roles=[77]
         message=await self.missing_roles_screening()
         message.delete.assert_not_awaited()
         self.assertIn('currently has an exempt role',' '.join(self.channel.send.call_args.args[0].split()))
@@ -345,7 +347,7 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_accepts_missing_rest_roles_and_still_fetches_member(self):
         self.pattern()
         for message in self.messages.values():
-            message.author.roles=[SimpleNamespace(id=88)]
+            message.author._roles=[88]
             self.adapter.process_evidence(snapshot(message))
         payload=self.plan(self.adapter.store.incidents()[0],'timeout')
         for message in self.messages.values(): message.author=SimpleNamespace(id=50,bot=False)

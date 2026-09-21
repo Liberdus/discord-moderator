@@ -1,3 +1,5 @@
+> **0.5.4 safety update:** [stop controls, role verification and timeout protections](review-fixes.md) address the subsequent code review findings. The full protected permission set is listed there. Existing feature flags are preserved.
+
 > **Superseded by 0.5.2:** use [the Discord deletion-call fix](delete-call-fix.md). It retains the 0.5.1 role comparison correction and fixes the next failure at the SDK call.
 
 > **0.5.1 update:** the owner installed 0.5.0 and enabled deletion/auto-delete, but the preflight comparison falsely reported changed content. Use [the deletion fix](deletion-fix.md) to update while preserving current flags and budgets. The initial installation procedure below is retained for reference.

@@ -9,6 +9,7 @@ from . import actions
 from .commands import CommandRequest
 from .display import panel
 from .live import AssessmentText, delivery_nonce
+from .member_roles import checked_membership, require_complete_role_cache, PROTECTED_TIMEOUT_PERMISSIONS
 
 ACTION_BUTTONS = {'liberdus:action:v1:delete': 'delete', 'liberdus:action:v1:dismiss': 'dismiss',
                   'liberdus:action:v1:timeout': 'timeout'}
@@ -47,9 +48,7 @@ class ActionTransport:
             await self.interaction_notice(interaction, 'Moderation is busy. Try the confirmation again.')
             return True
         generation = self.generation
-        try:
-            await asyncio.wait_for(interaction.response.defer(ephemeral=True, thinking=True), timeout=2)
-        except Exception:
+        if not await self.defer_interaction(interaction):
             return True
         if generation != self.generation or not self.online or self.closing:
             await self.interaction_notice(interaction, 'Connection changed. Request a new confirmation.', deferred=True)
@@ -94,10 +93,7 @@ class ActionTransport:
                 # proves current roles. Fetch membership explicitly before auto-delete.
                 try:
                     member = await asyncio.wait_for(fetched[0].guild.fetch_member(int(payload['author_id'])), timeout=5)
-                    from .models import validate_ids
-                    roles = validate_ids(tuple(str(role.id) for role in member.roles), 'current author roles', maximum=250)
-                    if (str(member.id) != payload['author_id'] or str(member.guild.id) != self.policy.guild_id or member.bot):
-                        raise ValueError('Unexpected member identity')
+                    roles = checked_membership(member, self.policy.guild_id, payload['author_id'])
                 except Exception as error:
                     raise actions.ActionError('Current author roles unavailable. Automatic deletion skipped.') from error
                 self.action_guard(payload, generation)
@@ -108,14 +104,22 @@ class ActionTransport:
                 member = await asyncio.wait_for(guild.fetch_member(int(payload['author_id'])), timeout=5)
                 self.action_guard(payload, generation)
                 me = guild.me
-                if me is None or not me.guild_permissions.moderate_members or me.guild_permissions.administrator:
+                try:
+                    roles = checked_membership(member, self.policy.guild_id, payload['author_id'])
+                    require_complete_role_cache(member)
+                    if me is None or str(me.id) != self.policy.bot_user_id or str(me.guild.id) != self.policy.guild_id:
+                        raise ValueError('Bot membership unavailable')
+                    require_complete_role_cache(me)
+                except (AttributeError, ValueError, TypeError) as error:
+                    raise actions.ActionError('Current role privileges unavailable. Timeout skipped.') from error
+                if not me.guild_permissions.moderate_members or me.guild_permissions.administrator:
                     raise actions.ActionError('Bot needs Moderate Members, without Administrator.')
                 perms = member.guild_permissions
                 if (str(member.id) != payload['author_id'] or str(member.guild.id) != self.policy.guild_id
                         or member.bot or member.id == guild.owner_id
                         or str(member.id) in self.policy.operator_user_ids
-                        or perms.administrator or perms.manage_guild or perms.moderate_members or perms.manage_messages
-                        or set(str(role.id) for role in member.roles) & set(self.policy.classifier.exempt_role_ids)
+                        or any(getattr(perms, name) for name in PROTECTED_TIMEOUT_PERMISSIONS)
+                        or set(roles) & set(self.policy.classifier.exempt_role_ids)
                         or member.top_role >= me.top_role):
                     raise actions.ActionError('Protected member or role hierarchy prevents timeout.')
                 now = datetime.now(timezone.utc)
@@ -163,17 +167,9 @@ class ActionTransport:
                       'No new AI call. Attempts are saved.', 'Audit: !mod actions ID'])
 
     def finish_own_deletions(self):
-        # Retain already-arrived staff controls (especially pause/off) across the
-        # conservative evidence reset caused by our own deletion batch.
-        controls = []
-        while not self.queue.empty():
-            _, kind, value = self.queue.get_nowait()
-            self.queue.task_done()
-            if kind in ('command', 'review_click', 'action_confirm'):
-                controls.append((kind, value))
+        # Stop state is already durable. Cancel old interactions rather than
+        # replaying a confirmation after its evidence generation changed.
         self.coverage_gap('deleted_message')
-        for kind, value in controls:
-            self.enqueue(kind, value)
 
     async def action_request(self, key, request_factory):
         try:

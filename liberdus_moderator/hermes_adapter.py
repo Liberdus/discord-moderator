@@ -22,10 +22,11 @@ from .action_transport import ActionTransport, ACTION_BUTTONS, confirm_buttons
 from . import actions
 from .config import Config
 from .engine import Engine
-from .display import framed
+from .display import framed, panel
 from .hermes_plugin import PLATFORM, explicit_activation
 from .live import LiveSession, delivery_nonce, parse_command
 from .models import MessageEvent
+from .member_roles import checked_membership, membership_roles
 from .storage import Store
 
 REVIEW_BUTTONS = {"liberdus:assess:v1:" + label: label for label in ("needs-attention", "looks-okay", "unsure")}
@@ -62,12 +63,17 @@ def verify_runtime():
         raise ValueError("Runtime interfaces or Discord library require compatibility review")
 
 
-def snapshot(message):
+def snapshot(message, *, author_role_ids=None):
     """Copy SDK evidence immediately; never hand mutable SDK objects to the queue."""
+    if author_role_ids is None:
+        try:
+            author_role_ids = membership_roles(message.author, message.guild.id)
+        except (AttributeError, ValueError, TypeError):
+            author_role_ids = ()  # Unknown, never evidence that the member has no roles.
     return MessageEvent(
         guild_id=str(message.guild.id), channel_id=str(message.channel.id), message_id=str(message.id),
         author_id=str(message.author.id), content=message.content, created_at=message.created_at.timestamp(),
-        author_role_ids=tuple(str(role.id) for role in getattr(message.author, "roles", ())),
+        author_role_ids=author_role_ids,
         edited_at=message.edited_at.timestamp() if message.edited_at else None,
         is_bot=message.author.bot, is_webhook=message.webhook_id is not None,
         is_thread=isinstance(message.channel, discord.Thread), has_attachments=bool(message.attachments),
@@ -131,6 +137,12 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         self.lock_fd = None
         self.owns_token_lock = False
         self.next_command_at = 0.0
+        self.stop_replies = {}
+        self.stop_reply_pending = False
+        self.next_stop_reply_at = 0.0
+        self.deferred_interactions = {}
+        self.interaction_receivers = set()
+        self.notice_tasks = set()
 
     async def connect(self, *, is_reconnect=False):
         if self.client is not None:
@@ -208,6 +220,10 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         if (not self.online or self.closing or (self.policy.classifier.mode == "shadow"
                 and (not self.queue.empty() or self.processing_evidence))):
             return False
+        return self.policy_current()
+
+    def policy_current(self):
+        """Recheck disk activation and policy before privileged local controls."""
         try:
             path = get_hermes_home() / "moderation.toml"
             return (not path.is_symlink() and explicit_activation()
@@ -228,7 +244,11 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         if self.classifier is not None:
             if self.policy.classifier.mode == "report_only":
                 if result["disposition"] in {"no_match", "review"} and evidence.content.strip():
-                    if self.live.engine.role_exempt(evidence.author_role_ids):
+                    if not self.live.engine.role_evidence_available(evidence.author_role_ids):
+                        self.classifier_candidates.discard(evidence.message_id)
+                        self.store.set_setting("screening_unchecked", self.store.get_setting("screening_unchecked", 0) + 1)
+                        self.store.set_setting("screening_state", "membership_unavailable")
+                    elif self.live.engine.role_exempt(evidence.author_role_ids):
                         self.store.set_setting("screening_exempt", self.store.get_setting("screening_exempt", 0) + 1)
                     else:
                         self.classifier_candidates.add(evidence.message_id)
@@ -288,8 +308,15 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         self.classifier_candidates.clear()
         self.auto_delete_candidates.clear()
         while not self.queue.empty():
-            self.queue.get_nowait()
+            _, kind, value = self.queue.get_nowait()
+            self.cancel_queued_interaction(kind, value)
             self.queue.task_done()
+        # Restrictive controls already committed synchronously; only their
+        # bounded, coalesced receipt remains independent of evidence generations.
+        self.stop_reply_pending = False
+        if self.stop_replies and not self.closing:
+            self.queue.put_nowait((self.generation, "stop_reply", None))
+            self.stop_reply_pending = True
         if self.live is not None:
             self.live.gap(reason)
         if self.classifier is not None and self.policy.classifier.mode == "report_only":
@@ -307,11 +334,112 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         return (self.online and guild_id is not None and str(guild_id) == self.policy.guild_id
                 and str(channel_id) in (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids))
 
+    @staticmethod
+    def stop_control(event):
+        return ((event.command == "pause" and not event.arguments)
+                or (event.command in {"deletion", "auto-delete", "timeout"}
+                    and event.arguments == ("off",)))
+
+    def apply_stop_control(self, message_id, event):
+        # No await or evidence queue: acknowledged stop state is durable before
+        # the next action guard. Only four fixed restrictive operations qualify.
+        if (self.live is None or not self.online or self.closing
+                or event.guild_id != self.policy.guild_id
+                or event.channel_id not in self.policy.command_channel_ids
+                or event.user_id not in self.policy.operator_user_ids
+                or not self.policy_current()):
+            return
+        try:
+            self.checked_channel(event.channel_id, sending=True)
+        except ValueError:
+            return
+        content = self.live.command(event, message_id, self.online)
+        if content is None:
+            return  # Durable receipt prevents duplicate stop delivery/replay.
+        # An earlier enable/resume must not execute after this newer stop.
+        queued = []
+        while not self.queue.empty():
+            item = self.queue.get_nowait()
+            _, kind, value = item
+            superseded = (kind == "command" and
+                ((event.command == "pause" and value[1].command == "resume")
+                 or (value[1].command == event.command and value[1].arguments == ("on",))))
+            if superseded:
+                # Terminal receipt: duplicate gateway delivery of this older
+                # enable must not undo a newer stop after queue invalidation.
+                with self.store.transaction():
+                    self.store.db.execute("INSERT OR IGNORE INTO command_receipts VALUES(?,?)",
+                                          (value[0], self.live.engine._now()))
+                    self.store.db.execute("DELETE FROM command_receipts WHERE message_id IN ("
+                        "SELECT message_id FROM command_receipts ORDER BY created_at DESC LIMIT -1 OFFSET 5000)")
+            else:
+                queued.append(item)
+            self.queue.task_done()
+        for item in queued:
+            self.queue.put_nowait(item)
+        self.stop_replies[event.command] = (message_id, event)
+        if not self.stop_reply_pending:
+            try:
+                self.queue.put_nowait((self.generation, "stop_reply", None))
+                self.stop_reply_pending = True
+            except asyncio.QueueFull:
+                self.coverage_gap("queue_full")
+
     def enqueue(self, kind, value):
+        if kind == "command" and self.stop_control(value[1]):
+            self.apply_stop_control(*value)
+            return
         try:
             self.queue.put_nowait((self.generation, kind, value))
         except asyncio.QueueFull:
+            self.cancel_queued_interaction(kind, value)
             self.coverage_gap("queue_full")
+
+    async def defer_interaction(self, interaction):
+        # Reserve before the acknowledgement await, bounding concurrent receives
+        # as well as queued/in-flight cancellation notices to 200 interactions.
+        if self.closing or not self.online:
+            return False
+        receiver = asyncio.current_task()
+        self.interaction_receivers.difference_update(task for task in tuple(self.interaction_receivers) if task.done())
+        if (len(self.deferred_interactions) >= 200
+                or (receiver not in self.interaction_receivers and len(self.interaction_receivers) >= 200)):
+            await self.interaction_notice(interaction, "Moderation is busy. Please try again shortly.")
+            return False
+        key = id(interaction)
+        self.deferred_interactions[key] = (interaction, False)
+        # The SDK callback can still be waiting for its defer acknowledgement at
+        # shutdown. Keep its bounded admitted task alive through the closing
+        # check and completion reply before closing the shared HTTP session.
+        if receiver not in self.interaction_receivers:
+            self.interaction_receivers.add(receiver)
+            receiver.add_done_callback(self.interaction_receivers.discard)
+        try:
+            await asyncio.wait_for(interaction.response.defer(ephemeral=True, thinking=True), timeout=2)
+        except asyncio.CancelledError:
+            self.deferred_interactions.pop(key, None)
+            raise
+        except Exception:
+            self.deferred_interactions.pop(key, None)
+            return False
+        self.deferred_interactions[key] = (interaction, True)
+        return True
+
+    def cancel_queued_interaction(self, kind, value):
+        if kind not in {"review_click", "action_confirm"}:
+            return
+        interaction = value[0]
+        record = self.deferred_interactions.get(id(interaction))
+        if record is None or not record[1]:
+            return
+        # Remove from this cancellation path immediately; the single task owns
+        # completion and never executes/replays the underlying assessment/action.
+        self.deferred_interactions[id(interaction)] = (interaction, False)
+        task = asyncio.create_task(self.interaction_notice(interaction,
+            "Evidence or connection changed. This click was cancelled. "
+            "Open !mod incident ID again. No action was replayed.", deferred=True))
+        self.notice_tasks.add(task)
+        task.add_done_callback(self.notice_tasks.discard)
 
     def receive(self, message):
         if (not self.in_scope(getattr(message.guild, "id", None), message.channel.id)
@@ -357,6 +485,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         view = confirm_buttons(proposal) if proposal else None
         # Webhook.send rejects view=None; omit it for plain completion replies.
         options = {"view": view} if view is not None else {}
+        interrupted = False
         try:
             if deferred:
                 sent = await asyncio.wait_for(interaction.followup.send(framed(content), ephemeral=True,
@@ -367,13 +496,24 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
                 sent = None
             if proposal and sent is not None:
                 actions.bind(self.live.engine, proposal, str(sent.id))
+        except asyncio.CancelledError:
+            interrupted = True
+            raise
         except Exception:
             pass  # No mutation/replay after an uncertain confirmation delivery.
         finally:
+            if deferred and not interrupted:
+                self.deferred_interactions.pop(id(interaction), None)
             if view is not None:
                 view.stop()
 
     async def receive_review_click(self, interaction):
+        try:
+            return await self._receive_review_click(interaction)
+        finally:
+            self.interaction_receivers.discard(asyncio.current_task())
+
+    async def _receive_review_click(self, interaction):
         if await self.receive_action_confirmation(interaction):
             return
         data = interaction.data
@@ -404,9 +544,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             await self.interaction_notice(interaction, "Moderation is busy. Try the review button again shortly.")
             return
         generation = self.generation
-        try:
-            await asyncio.wait_for(interaction.response.defer(ephemeral=True, thinking=True), timeout=2)
-        except Exception:
+        if not await self.defer_interaction(interaction):
             return  # No mutation without a confirmed acknowledgement.
         if generation != self.generation or not self.online or self.closing:
             await self.interaction_notice(interaction, "Connection changed. No review saved; try again.", deferred=True)
@@ -495,7 +633,30 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             while True:
                 generation, kind, value = await self.queue.get()
                 try:
+                    if kind == "stop_reply":
+                        replies, self.stop_replies = self.stop_replies, {}
+                        self.stop_reply_pending = False
+                        now = asyncio.get_running_loop().time()
+                        if replies and self.online and not self.closing and now >= self.next_stop_reply_at:
+                            self.next_stop_reply_at = now + 1
+                            message_id, event = next(reversed(replies.values()))
+                            labels = {"pause": "Moderation paused", "deletion": "Deletion OFF",
+                                      "auto-delete": "Auto-delete OFF", "timeout": "Timeout OFF"}
+                            content = panel("Safety controls applied", [*(labels[name] for name in replies),
+                                "Saved across restarts.", "Use !mod status for current settings."])
+                            try:
+                                await self.emit(event.channel_id, content, delivery_nonce("stop:" + message_id))
+                            except Exception:
+                                pass  # Reply is best effort; durable stop has already applied.
+                        if self.queue.empty() and self.online and not self.closing:
+                            if self.classifier is not None:
+                                self.classifier.submit(sorted(self.classifier_candidates))
+                                self.classifier_candidates.clear()
+                            await self.flush_reports()
+                            await self.flush_automatic_actions()
+                        continue
                     if generation != self.generation or not self.online:
+                        self.cancel_queued_interaction(kind, value)
                         continue
                     if kind == "message":
                         self.process_evidence(value)
@@ -511,9 +672,24 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
                         try:
                             channel = self.checked_channel(value[0])
                             message = await asyncio.wait_for(channel.fetch_message(value[1]), timeout=8)
-                            evidence = snapshot(message)
-                            if evidence.channel_id != value[0] or evidence.message_id != str(value[1]):
+                            # Even a REST Member can come from cache. Only the explicit
+                            # membership fetch below establishes roles for this edit.
+                            evidence = snapshot(message, author_role_ids=())
+                            if (evidence.guild_id != self.policy.guild_id or evidence.channel_id != value[0]
+                                    or evidence.message_id != str(value[1])):
                                 raise ValueError("Fetched edit identity mismatch")
+                            # REST authors can be Users or cached Members. Neither establishes
+                            # current membership for the exemption; resolve it while ON.
+                            if (self.policy.classifier.exempt_role_ids
+                                    and self.store.get_setting("role_exemption_enabled", True) is True
+                                    and not evidence.is_bot and not evidence.is_webhook):
+                                roles = ()
+                                try:
+                                    member = await asyncio.wait_for(message.guild.fetch_member(int(evidence.author_id)), timeout=5)
+                                    roles = checked_membership(member, self.policy.guild_id, evidence.author_id)
+                                except (discord.HTTPException, ValueError, TypeError, AttributeError, TimeoutError):
+                                    pass  # Keep code-rule evidence; unknown membership cannot enter JEV.
+                                evidence = snapshot(message, author_role_ids=roles)
                             if generation == self.generation and self.online:
                                 result = self.process_evidence(evidence)
                                 if result["reason"] == "conflicting_event_version":
@@ -584,16 +760,47 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         self.closing = True
         self.online = False
         self.ready_event.clear()
-        if self.client is not None:
-            with contextlib.suppress(Exception):
-                await self.client.close()
+        while not self.queue.empty():
+            _, kind, value = self.queue.get_nowait()
+            self.cancel_queued_interaction(kind, value)
+            self.queue.task_done()
+        self.stop_replies.clear()
+        self.stop_reply_pending = False
         current = asyncio.current_task()
         for task in (self.worker, self.receiver):
             if task is not None and task is not current:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
-        self.worker = self.receiver = self.client = None
+        self.worker = self.receiver = None
+        receiving = {task for task in self.interaction_receivers if task is not current and not task.done()}
+        if receiving:
+            # Deferral is capped at 2s and its completion at 10s. No new deferred
+            # admissions are allowed while closing; this wait is bounded.
+            _, pending = await asyncio.wait(receiving, timeout=12.5)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        self.interaction_receivers.clear()
+        # A worker cancelled mid-action can have an uncertain result. Finish its
+        # acknowledgement without claiming failure or attempting the action again.
+        for interaction, acknowledged in list(self.deferred_interactions.values()):
+            if acknowledged:
+                task = asyncio.create_task(self.interaction_notice(interaction,
+                    "Processing interrupted. Check !mod incident ID and !mod actions ID "
+                    "before retrying. No action was replayed.", deferred=True))
+                self.notice_tasks.add(task)
+                task.add_done_callback(self.notice_tasks.discard)
+        if self.notice_tasks:
+            await asyncio.gather(*list(self.notice_tasks), return_exceptions=True)
+        self.deferred_interactions.clear()
+        # Webhook completion needs the SDK HTTP session. Close it only after
+        # best-effort notices, while closing/offline already block new actions.
+        if self.client is not None:
+            with contextlib.suppress(Exception):
+                await self.client.close()
+        self.client = None
         if self.classifier is not None:
             await self.classifier.close()
             self.classifier = None
