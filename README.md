@@ -1,3 +1,5 @@
+Latest: **0.4.2** adds persistent private role-exemption controls, `!mod help`, and mobile message panels. See [installation and commands](docs/controls-and-formatting.md).
+
 # Liberdus Discord Moderator
 
 **0.4.1 prepared:** [JEV role exemption](docs/role-exemption.md) for `1302455329795342377`, with observed membership, a separate exemption counter and unchanged repetition checks. The owner has now confirmed 0.4.0 single-message reporting and staff review; live exemption activation remains pending.

@@ -1129,3 +1129,10 @@ The dedicated owner setup adds that role without resetting screening mode, limit
 **Latest live screening evidence:** the owner supplied 0.4.0 `JEV: report_only / ready` with $1/day and $4 total, followed by single-message incident `02a6e65c2b594100a821a4e28156f329`, revision 1. The message asking for a wallet recovery phrase returned Sensitive request at model score 0.99 and purpose Other. The owner saved Needs attention; the report refreshed and remained pending with current evidence. This confirms that single-message report/staff path for the supplied example, not general semantic accuracy. The initial zero counters were shown before the test. Role exemption and the warning/benign examples are separate checks, not yet claimed live-passed.
 
 **0.4.1 validation:** 213 core/setup tests pass on Python 3.11.16 and 3.12.3; 64 pinned Hermes/Discord integration tests pass with external network blocked/mocked. The role exemption is implemented and packaged, not yet verified in the live owner profile.
+
+
+### 10.29 — Private exemption controls and consistent display (2026-09-21)
+
+Implemented 0.4.2: `!mod exempt-role on|off` toggles the configured JEV-only role exemption; no arguments displays it. Default ON, durable database setting, authorized private staff commands only. Code repetition rules remain active; no backfill, budget reset, or enforcement. Queued/provider results recheck membership exemption before admission/application. Already-sent calls cannot be recalled.
+
+Added real `!mod help`, mobile-width status/help/plain response panels, and visible top/bottom message dividers on delivery, ephemeral confirmations, and report refreshes. Incident links remain clickable. See `docs/controls-and-formatting.md` for owner installation. 220 core/setup tests and 65 pinned-runtime integration tests passed; live owner activation remains pending. No Discord messages, paid JEV calls, runtime restart, or GitHub push performed for this release.

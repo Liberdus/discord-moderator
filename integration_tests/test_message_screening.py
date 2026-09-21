@@ -80,7 +80,7 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.receive(self.message(301,20,98,'!mod status'))
         await self.screened()
         self.provider.assert_not_awaited()
-        self.assertIn('JEV: report_only',self.channel.send.call_args.args[0])
+        self.assertIn('Mode: report_only',self.channel.send.call_args.args[0])
         self.assertIn('Not checked:',self.channel.send.call_args.args[0])
 
     async def test_pending_provider_does_not_block_status_or_spam_rule(self):
@@ -97,7 +97,7 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Cross-channel repeat',self.channel.send.call_args.args[0])
         self.adapter.receive(self.message(400,20,98,'!mod status'))
         await self.drain()
-        self.assertIn('Liberdus moderation:',self.channel.send.call_args.args[0])
+        self.assertIn('**Liberdus moderation**',self.channel.send.call_args.args[0])
         release.set()
         await self.screened()
 

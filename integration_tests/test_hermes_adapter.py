@@ -163,7 +163,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_awaited_once()
         args, kwargs = self.channel.send.call_args
         self.assertIn("9/9 passed", args[0])
-        self.assertIn("Live Discord events, permissions and actual restart: not tested", args[0])
+        self.assertIn("Live Discord events, permissions and actual restart: not tested", " ".join(args[0].split()))
         self.assertEqual(kwargs["allowed_mentions"].to_dict()["parse"], [])
         self.adapter.handle_message.assert_not_called()
 
@@ -332,7 +332,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.adapter.receive_review_click(duplicate)
         await self.drain()
         self.assertEqual(len(self.reviews()), 1)
-        self.assertIn("already processed", duplicate.followup.send.call_args.args[0])
+        self.assertIn("already processed", " ".join(duplicate.followup.send.call_args.args[0].split()))
 
     async def test_button_authentication_and_known_message_binding_are_required(self):
         await self.create_report()
@@ -379,7 +379,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.adapter.receive_review_click(interaction)
         await self.drain()
         self.assertEqual(self.reviews(), [])
-        self.assertIn("Private review channel unavailable", interaction.followup.send.call_args.args[0])
+        self.assertIn("Private review channel unavailable", " ".join(interaction.followup.send.call_args.args[0].split()))
 
     async def test_incident_buttons_capture_displayed_revision_and_new_client_handles_old_click(self):
         identity = await self.create_report()
@@ -401,7 +401,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.drain()
         await client.close()
         self.assertEqual(self.reviews()[0]["revision"], 1)
-        self.assertIn("revision: 1 (historical)", interaction.followup.send.call_args.args[0])
+        self.assertIn("revision: 1 (historical)", " ".join(interaction.followup.send.call_args.args[0].split()))
 
     async def test_busy_and_expired_review_clicks_do_not_write(self):
         await self.create_report()
@@ -479,7 +479,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         first = self.interaction(label="looks-okay")
         await self.adapter.receive_review_click(first)
         await self.drain()
-        self.assertIn("could not be updated", first.followup.send.call_args.args[0])
+        self.assertIn("could not be updated", " ".join(first.followup.send.call_args.args[0].split()))
         self.assertEqual(pending_page(self.adapter.live.engine)["total"], 0)
         self.assertEqual(len(self.reviews()), 1)
         self.adapter.next_command_at = 0
@@ -499,7 +499,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.adapter.receive_review_click(first)
         await self.drain()
         messages[700].edit.assert_not_awaited()
-        self.assertIn("could not be updated", first.followup.send.call_args.args[0])
+        self.assertIn("could not be updated", " ".join(first.followup.send.call_args.args[0].split()))
         messages[700].author.id = 99
         def changed_permissions(identity):
             self.channel.permissions_for.side_effect = lambda member: SimpleNamespace(
@@ -519,7 +519,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.adapter.receive_review_click(legacy)
         await self.drain()
         legacy.response.defer.assert_not_awaited()
-        self.assertIn("old buttons record content labels", legacy.response.send_message.call_args.args[0])
+        self.assertIn("old buttons record content labels", " ".join(legacy.response.send_message.call_args.args[0].split()))
         self.assertEqual(self.reviews(), [])
 
     async def test_text_assessment_refreshes_report_and_pending_is_authorized(self):

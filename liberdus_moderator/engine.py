@@ -38,6 +38,10 @@ class Engine:
             raise ValueError("Clock must return a positive finite Unix timestamp")
         return float(value)
 
+    def role_exempt(self, roles):
+        return (self.store.get_setting("role_exemption_enabled", True) is True
+                and bool(set(roles) & set(self.config.classifier.exempt_role_ids)))
+
     def status(self):
         return {
             "mode": self.config.mode,
@@ -50,6 +54,7 @@ class Engine:
             "classifier_state": self.store.get_setting("screening_state" if self.config.classifier.mode == "report_only" else "classifier_state", "not_started") if self.config.ai_enabled else "off",
             "ai_attempts": self.store.get_setting("classifier_total_calls", 0) + self.store.get_setting("screening_total_calls", 0),
             "screening_attempts": self.store.get_setting("screening_total_calls", 0),
+            "role_exemption_enabled": self.store.get_setting("role_exemption_enabled", True),
             "screening_exempt": self.store.get_setting("screening_exempt", 0),
             "screening_exempt_role_ids": list(self.config.classifier.exempt_role_ids),
             "screening_checked": self.store.get_setting("screening_checked", 0),

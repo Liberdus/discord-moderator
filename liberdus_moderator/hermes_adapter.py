@@ -20,6 +20,7 @@ from hermes_constants import get_hermes_home
 from .commands import CommandRequest
 from .config import Config
 from .engine import Engine
+from .display import framed
 from .hermes_plugin import PLATFORM, explicit_activation
 from .live import LiveSession, delivery_nonce, parse_command
 from .models import MessageEvent
@@ -216,7 +217,7 @@ class ModerationAdapter(BasePlatformAdapter):
         if self.classifier is not None:
             if self.policy.classifier.mode == "report_only":
                 if result["disposition"] in {"no_match", "review"} and evidence.content.strip():
-                    if set(evidence.author_role_ids) & set(self.policy.classifier.exempt_role_ids):
+                    if self.live.engine.role_exempt(evidence.author_role_ids):
                         self.store.set_setting("screening_exempt", self.store.get_setting("screening_exempt", 0) + 1)
                     else:
                         self.classifier_candidates.add(evidence.message_id)
@@ -339,6 +340,7 @@ class ModerationAdapter(BasePlatformAdapter):
 
     async def interaction_notice(self, interaction, content, *, deferred=False):
         try:
+            content = framed(content)
             sender = interaction.followup.send if deferred else interaction.response.send_message
             await asyncio.wait_for(sender(content, ephemeral=True, allowed_mentions=discord.AllowedMentions.none()), timeout=10)
         except Exception:
@@ -390,7 +392,7 @@ class ModerationAdapter(BasePlatformAdapter):
         channel = self.checked_channel(channel_id, sending=True)
         view = assessment_buttons() if reviewable else None
         try:
-            return await asyncio.wait_for(channel.send(str(content), allowed_mentions=discord.AllowedMentions.none(),
+            return await asyncio.wait_for(channel.send(framed(content), allowed_mentions=discord.AllowedMentions.none(),
                 nonce=nonce, suppress_embeds=True, silent=True, view=view), timeout=20)
         finally:
             if view is not None:
@@ -422,7 +424,7 @@ class ModerationAdapter(BasePlatformAdapter):
                 self.checked_channel(event.channel_id, sending=True)
                 updated = self.live.render_snapshot(identity, revision)
                 view = assessment_buttons()
-                await asyncio.wait_for(message.edit(content=updated, view=view, suppress=True,
+                await asyncio.wait_for(message.edit(content=framed(updated), view=view, suppress=True,
                     allowed_mentions=discord.AllowedMentions.none()), timeout=5)
                 succeeded += 1
             except Exception:

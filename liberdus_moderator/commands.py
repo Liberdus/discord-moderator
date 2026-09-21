@@ -67,7 +67,14 @@ def handle_command(engine: Engine, request: CommandRequest):
         return {"authorized": False, "ok": False, "error": "not_authorized", "ai_calls": 0}
     name, arguments = request.command, request.arguments
     result = {"authorized": True, "ok": True, "ai_calls": 0, "public_actions": []}
-    if name == "status" and not arguments:
+    if name == "help" and not arguments:
+        result["data"] = {}
+    elif name == "exempt-role" and arguments in ((), ("on",), ("off",)):
+        if arguments:
+            with store.transaction():
+                store.set_setting("role_exemption_enabled", arguments == ("on",))
+        result["data"] = engine.status()
+    elif name == "status" and not arguments:
         result["data"] = engine.status()
     elif name in ("pause", "resume") and not arguments:
         if name == "resume" and config.mode == "off":
