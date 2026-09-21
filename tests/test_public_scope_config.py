@@ -18,7 +18,7 @@ class PublicScopeConfigTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 config = policy(schema_version=schema)
                 legacy = asdict(config)
-                del legacy['allow_public_monitored_channels'], legacy['excluded_category_ids']
+                del legacy['allow_public_monitored_channels'], legacy['excluded_category_ids'], legacy['included_category_ids']
                 if schema == 1:
                     del legacy['classifier']
                 else:
@@ -45,6 +45,19 @@ class PublicScopeConfigTests(unittest.TestCase):
             policy(schema_version=2, allow_public_monitored_channels=True, actions_enabled=True)
         # Existing explicitly enabled private-pilot action policies are unchanged.
         self.assertTrue(policy(schema_version=2, actions_enabled=True).actions_enabled)
+
+    def test_included_categories_round_trip_and_bind_scope_without_changing_default_hash(self):
+        base=policy(schema_version=2,allow_public_monitored_channels=True,excluded_category_ids=('200',))
+        config=replace(base,included_category_ids=('100','101'))
+        self.assertEqual(Config.from_dict(tomllib.loads(policy_text(config))),config)
+        self.assertNotEqual(base.policy_hash,config.policy_hash)
+        self.assertNotEqual(config.policy_hash,replace(config,included_category_ids=('100',)).policy_hash)
+        prior=asdict(base); del prior['included_category_ids']; del prior['classifier']['exempt_role_ids']
+        expected=hashlib.sha256(json.dumps(prior,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+        self.assertEqual(base.policy_hash,expected)
+        for values in (('0',),('abc',),('100','100'),('200',),[True],'100'):
+            with self.subTest(values=values),self.assertRaises(ValueError):
+                replace(base,included_category_ids=values)
 
     def test_public_flag_requires_exact_boolean(self):
         for value in (1, 0, 'true', None, []):

@@ -295,7 +295,8 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
                 await self.fail("discord_connection_failed")
 
     def guarded_scope(self):
-        return bool(self.policy and (self.policy.allow_public_monitored_channels or self.policy.excluded_category_ids))
+        return bool(self.policy and (self.policy.allow_public_monitored_channels or self.policy.excluded_category_ids
+                                    or self.policy.included_category_ids))
 
     def checked_channel(self, channel_id, *, sending=False):
         allowed = self.policy.command_channel_ids if sending else (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids)
@@ -311,6 +312,9 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             if channel.type != discord.ChannelType.text:
                 raise ValueError("Only ordinary guild text channels are monitored")
             category_id = getattr(channel, "category_id", ...)
+            if (channel_id in self.policy.monitored_channel_ids and self.policy.included_category_ids
+                    and str(category_id) not in self.policy.included_category_ids):
+                raise ValueError("Channel is outside the included categories")
             if category_id is not None:
                 if type(category_id) is not int or category_id <= 0:
                     raise ValueError("Channel category metadata unavailable")

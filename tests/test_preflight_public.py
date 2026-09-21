@@ -47,6 +47,19 @@ class PublicPreflightTests(unittest.TestCase):
         self.assertFalse(any("messages" in path for path in self.calls))
         self.assertFalse(inspect(replace(self.config, allow_public_monitored_channels=False), self.get)["checks_passed"])
 
+    def test_included_categories_apply_to_monitoring_but_not_private_command_destination(self):
+        config=replace(self.config,included_category_ids=('30',))
+        self.metadata['/channels/50']={'id':'50','guild_id':'1','type':4}
+        self.metadata['/channels/20']['parent_id']='50'
+        self.assertTrue(inspect(config,self.get)['checks_passed'])
+        for parent in ('50',None):
+            with self.subTest(parent=parent):
+                self.metadata['/channels/10']['parent_id']=parent
+                result=inspect(config,self.get)
+                self.assertFalse(result['checks_passed'])
+                self.assertFalse(result['channels'][0]['category_allowed'])
+                self.assertTrue(result['channels'][1]['category_allowed'])
+
     def test_public_flag_does_not_make_command_public(self):
         self.metadata["/channels/20"]["permission_overwrites"] = []
         report = inspect(self.config, self.get)

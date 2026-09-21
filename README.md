@@ -1,4 +1,4 @@
-Latest prepared: **0.5.6** adds an explicit observation rollout to eligible public Liberdus text channels, excluding Committers (`1318586868136415333`) and disabling all Discord moderation actions. Reports stay in private `bot-mod`; new channels are not added automatically. [Inventory, saved plan and owner rollout instructions](docs/public-observation.md). The live channel list and deployment are not yet verified; installing code alone preserves the private pilot. Existing [health notices and summary](docs/health-and-summary.md) remain available.
+Latest prepared: **0.5.7** limits public observation to categories `746426387606274202` and `746426387606274201`, keeps Committers excluded, and disables all Discord moderation actions. Permission gaps outside these categories no longer block planning. Reports stay in private `bot-mod`; new channels are not automatically added. [Saved plan and owner rollout instructions](docs/public-observation.md). Deployment is not yet confirmed; installing code alone preserves the existing pilot.
 
 # Liberdus Discord Moderator
 

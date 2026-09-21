@@ -127,7 +127,7 @@ def inspect(config, get):
         raise PreflightError("Bot guild membership did not match configuration.")
     results = []
     category_checks = {}
-    guarded_scope = config.allow_public_monitored_channels or bool(config.excluded_category_ids)
+    guarded_scope = config.allow_public_monitored_channels or bool(config.excluded_category_ids or config.included_category_ids)
     for channel_id in (*config.monitored_channel_ids, *config.command_channel_ids):
         channel = get(f"/channels/{channel_id}")
         if (channel.get("id") != channel_id or channel.get("guild_id") != config.guild_id
@@ -159,7 +159,8 @@ def inspect(config, get):
             "channel_id": channel_id,
             "purpose": "commands_and_reports" if command_channel else "monitoring",
             "category_id": category_id,
-            "category_allowed": category_id not in config.excluded_category_ids,
+            "category_allowed": (category_id not in config.excluded_category_ids
+                and (command_channel or not config.included_category_ids or category_id in config.included_category_ids)),
             "private_required": private_required,
             "public_required": not private_required,
             "bot_view": bool(bits & VIEW),

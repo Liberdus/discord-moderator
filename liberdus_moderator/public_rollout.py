@@ -23,8 +23,9 @@ GUILD = '746426387606274199'
 BOT = '1548537340870533150'
 COMMAND = '1551252553331642558'
 COMMITTERS = '1318586868136415333'
+INCLUDED_CATEGORIES = ('746426387606274201', '746426387606274202')
 TEST_CHANNELS = frozenset({'1551249559819264030', '1551249642216357908', '1551249693399584818'})
-PLAN_NAME = '.liberdus-public-rollout-plan.json'
+PLAN_NAME = '.liberdus-category-rollout-plan.json'
 PLAN_AGE = 86400
 
 
@@ -87,11 +88,16 @@ def inventory(config, get):
                 channels=output, messages_read=False, discord_changed=False, provider_called=False)
 
 
-def selection(config, report, excluded):
+def selection(config, report, excluded, included=INCLUDED_CATEGORIES):
     excluded = validate_ids(excluded, 'excluded_category_ids', nonempty=True, maximum=500)
     if COMMITTERS not in excluded:
         raise RolloutError('The approved Committers category must remain excluded.')
+    included = validate_ids(included, 'included_category_ids', nonempty=True, maximum=500)
+    if tuple(sorted(included)) != INCLUDED_CATEGORIES or set(included) & set(excluded):
+        raise RolloutError('This rollout includes only the two approved categories, without overlap with exclusions.')
     categories = {item['category_id'] for item in report['categories']}
+    if not set(included) <= categories:
+        raise RolloutError('An included category ID was not found in this server. Recheck the two category IDs.')
     if not set(excluded) <= categories:
         raise RolloutError('An excluded category ID was not found in this server. Recheck the category ID.')
     selected, omitted, blocked = [], [], []
@@ -109,6 +115,8 @@ def selection(config, report, excluded):
             omitted.append(dict(channel_id=identity, name=row['name'], reason='not_an_ordinary_text_channel'))
         elif row['category_id'] in excluded:
             omitted.append(dict(channel_id=identity, name=row['name'], reason='excluded_category'))
+        elif row['category_id'] not in included:
+            omitted.append(dict(channel_id=identity, name=row['name'], reason='outside_included_categories'))
         elif not row['everyone_visible']:
             omitted.append(dict(channel_id=identity, name=row['name'], reason='audience_unverified_not_everyone_visible'))
         elif row['bot_administrator'] or not row['bot_view'] or not row['bot_history']:
@@ -119,23 +127,25 @@ def selection(config, report, excluded):
         raise RolloutError('bot-mod must remain private, outside excluded categories, and readable/writable without Administrator.')
     if blocked:
         # Channel IDs/names are separately visible in inventory; avoid hiding partial coverage.
-        raise RolloutError('Some public text channels lack bot View Channel/Read Message History, or grant Administrator. Run inventory and fix permissions before making a plan.')
+        raise RolloutError('Some selected text channels lack bot View Channel/Read Message History, or grant Administrator. Blocked channel IDs: ' + ', '.join(row['channel_id'] for row in blocked) + '. Run inventory to check these channels.')
     if not selected:
         raise RolloutError('No eligible public text channels remain after exclusions.')
-    return dict(selected=selected, omitted=omitted, excluded_category_ids=sorted(excluded))
+    return dict(selected=selected, omitted=omitted, included_category_ids=sorted(included), excluded_category_ids=sorted(excluded))
 
 
 def make_plan(profile, excluded, get, *, now=None):
     config = load_policy(profile)
     report = inventory(config, get)
     chosen = selection(config, report, excluded)
-    plan = dict(version=1, guild_id=config.guild_id, bot_user_id=config.bot_user_id,
+    plan = dict(version=2, guild_id=config.guild_id, bot_user_id=config.bot_user_id,
                 baseline_policy_hash=config.policy_hash, created_at=time.time() if now is None else now,
-                selected_channels=chosen['selected'], excluded_category_ids=chosen['excluded_category_ids'])
+                selected_channels=chosen['selected'], included_category_ids=chosen['included_category_ids'],
+                excluded_category_ids=chosen['excluded_category_ids'])
     target = profile / PLAN_NAME
     regular_owned(target, optional=True)
     atomic_write(target, json.dumps(plan, sort_keys=True, indent=2) + '\n')
     return dict(plan_saved=str(target), selected_channels=chosen['selected'], omitted=chosen['omitted'],
+                included_category_ids=chosen['included_category_ids'],
                 excluded_category_ids=chosen['excluded_category_ids'], selected_count=len(chosen['selected']),
                 action_policy='disabled_for_all_monitored_channels', new_channels_auto_added=False,
                 active_policy_changed=False, provider_called=False, discord_changed=False)
@@ -149,12 +159,12 @@ def verify_plan(profile, get, *, now=None):
         raise RolloutError('Expected a private bounded rollout plan.')
     plan = json.loads(path.read_text())
     if (not isinstance(plan, dict) or set(plan) != {'version', 'guild_id', 'bot_user_id', 'baseline_policy_hash',
-            'created_at', 'selected_channels', 'excluded_category_ids'} or type(plan['version']) is not int
-            or plan['version'] != 1 or plan['guild_id'] != config.guild_id or plan['bot_user_id'] != config.bot_user_id
+            'created_at', 'selected_channels', 'excluded_category_ids', 'included_category_ids'} or type(plan['version']) is not int
+            or plan['version'] != 2 or plan['guild_id'] != config.guild_id or plan['bot_user_id'] != config.bot_user_id
             or plan['baseline_policy_hash'] != config.policy_hash or type(plan['created_at']) not in (int, float)
             or not 0 <= (time.time() if now is None else now) - plan['created_at'] <= PLAN_AGE):
         raise RolloutError('The rollout plan is stale or the policy changed. Make a fresh plan.')
-    chosen = selection(config, inventory(config, get), plan['excluded_category_ids'])
+    chosen = selection(config, inventory(config, get), plan['excluded_category_ids'], plan['included_category_ids'])
     def frozen(rows):
         if not isinstance(rows, list) or len(rows) > 500:
             raise RolloutError('Invalid planned channel list.')
@@ -163,13 +173,15 @@ def verify_plan(profile, get, *, now=None):
         return [(row['channel_id'], row['category_id']) for row in rows]
     if frozen(plan['selected_channels']) != frozen(chosen['selected']):
         raise RolloutError('Channel scope or categories changed. Make a fresh plan before applying.')
-    if plan['excluded_category_ids'] != chosen['excluded_category_ids']:
+    if (plan['excluded_category_ids'] != chosen['excluded_category_ids']
+            or plan['included_category_ids'] != chosen['included_category_ids']):
         raise RolloutError('Excluded category list is not canonical. Make a fresh plan.')
     target_ids = tuple(row['channel_id'] for row in chosen['selected'])
     exceptions = tuple(item for item in config.rules.approved_crossposts if set(item.channel_ids) <= set(target_ids))
     updated = replace(config, schema_version=2, allow_public_monitored_channels=True,
-                      excluded_category_ids=tuple(chosen['excluded_category_ids']), monitored_channel_ids=target_ids,
-                      actions_enabled=False, policy_version='public-observation-1',
+                      excluded_category_ids=tuple(chosen['excluded_category_ids']),
+                      included_category_ids=tuple(chosen['included_category_ids']), monitored_channel_ids=target_ids,
+                      actions_enabled=False, policy_version='category-observation-1',
                       rules=replace(config.rules, approved_crossposts=exceptions))
     return config, updated, chosen
 
@@ -186,8 +198,8 @@ def apply_plan(profile, get, *, now=None):
     if (any(data.get('platforms', {}).get('discord', {}).get('enabled') is not False for data in (default, local))
             or local.get('platforms', {}).get('liberdus_moderator', {}).get('enabled') is not False):
         raise RolloutError('Disable the moderation platform and finish the gateway restart first.')
-    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.5.6':
-        raise RolloutError('Install the reviewed 0.5.6 plugin while disabled before applying scope.')
+    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.5.7':
+        raise RolloutError('Install the reviewed 0.5.7 plugin while disabled before applying scope.')
     lock = os.open(paths[3], os.O_RDWR | os.O_NOFOLLOW)
     try:
         try:
@@ -233,7 +245,8 @@ def apply_plan(profile, get, *, now=None):
     finally:
         os.close(lock)
     return dict(configured=True, platform_enabled=False, selected_channels=chosen['selected'],
-                selected_count=len(chosen['selected']), excluded_category_ids=chosen['excluded_category_ids'],
+                selected_count=len(chosen['selected']), included_category_ids=chosen['included_category_ids'],
+                excluded_category_ids=chosen['excluded_category_ids'],
                 policy_hash=updated.policy_hash, actions_enabled=False, action_flags_reset=True,
                 backup=str(backup), usage_counters_changed=False, paused_state_changed=False,
                 credentials_changed=False, discord_changed=False, provider_called=False, gateway_restarted=False)
@@ -265,6 +278,7 @@ def main():
         elif args.operation == 'verify':
             _, updated, chosen = verify_plan(profile, get)
             result = dict(verified=True, selected_count=len(chosen['selected']), actions_enabled=updated.actions_enabled,
+                          included_category_ids=chosen['included_category_ids'],
                           excluded_category_ids=chosen['excluded_category_ids'], active_policy_changed=False)
         else:
             result = apply_plan(profile, get)

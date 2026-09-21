@@ -167,15 +167,18 @@ class Config:
     classifier: ClassifierSettings = field(default_factory=ClassifierSettings)
     allow_public_monitored_channels: bool = False
     excluded_category_ids: tuple[str, ...] = ()
+    included_category_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.schema_version) is not int or self.schema_version not in (1, 2):
             raise ValueError("only schema_version 1 and 2 are supported")
         validate_id(self.guild_id, "guild_id")
         validate_id(self.bot_user_id, "bot_user_id")
-        for name in ("monitored_channel_ids", "command_channel_ids", "operator_user_ids", "operator_role_ids", "excluded_category_ids"):
+        for name in ("monitored_channel_ids", "command_channel_ids", "operator_user_ids", "operator_role_ids", "excluded_category_ids", "included_category_ids"):
             maximum = 250 if name == "operator_role_ids" else 1000 if name == "operator_user_ids" else 500
             object.__setattr__(self, name, validate_ids(getattr(self, name), name, nonempty=name in ("monitored_channel_ids", "command_channel_ids"), maximum=maximum))
+        if set(self.included_category_ids) & set(self.excluded_category_ids):
+            raise ValueError("Included and excluded categories cannot overlap")
         if not self.operator_user_ids and not self.operator_role_ids:
             raise ValueError("at least one operator user or role ID is required")
         if set(self.monitored_channel_ids) & set(self.command_channel_ids):
@@ -224,7 +227,7 @@ class Config:
             raise ValueError("classifier requires an explicit schema_version = 2 migration")
         if data["schema_version"] == 2 and "classifier" not in data:
             raise ValueError("Schema 2 requires an explicit classifier table")
-        scope_keys = {"guild_id", "bot_user_id", "monitored_channel_ids", "command_channel_ids", "operator_user_ids", "operator_role_ids", "log_channel_id", "excluded_category_ids"}
+        scope_keys = {"guild_id", "bot_user_id", "monitored_channel_ids", "command_channel_ids", "operator_user_ids", "operator_role_ids", "log_channel_id", "excluded_category_ids", "included_category_ids"}
         scope = _object(data["scope"], "scope", scope_keys)
         kwargs = {key: value for key, value in data.items() if key not in ("scope", "rules", "storage", "classifier")}
         kwargs.update(scope)
@@ -244,6 +247,8 @@ class Config:
         data = asdict(self)
         if not self.allow_public_monitored_channels:
             del data["allow_public_monitored_channels"]
+        if not self.included_category_ids:
+            del data["included_category_ids"]
         if not self.excluded_category_ids:
             del data["excluded_category_ids"]
         if self.schema_version == 1:

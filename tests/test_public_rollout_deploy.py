@@ -34,7 +34,7 @@ class PublicDeployTests(unittest.TestCase):
             return '✓ User service restarted (PID 123)\n'
         if len(args)==2 and args[1].endswith('update.pyz'):
             if self.failure=='update': return json.dumps(dict(updated=False))
-            return json.dumps(dict(updated=True,version='0.5.6'))
+            return json.dumps(dict(updated=True,version='0.5.7'))
         return ''
 
     def invoke(self, bad_hash=False):

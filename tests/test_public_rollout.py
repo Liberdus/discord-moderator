@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from liberdus_moderator.config import ClassifierSettings, Config, StorageSettings
 from liberdus_moderator.configure_jev import policy_text
-from liberdus_moderator.public_rollout import (BOT, COMMAND, COMMITTERS, GUILD, PLAN_NAME,
+from liberdus_moderator.public_rollout import (BOT, COMMAND, COMMITTERS, GUILD, INCLUDED_CATEGORIES, PLAN_NAME,
     RolloutError, apply_plan, inventory, make_plan, selection, verify_plan)
 from liberdus_moderator.preflight import ADMIN, HISTORY, SEND, VIEW
 
@@ -35,7 +35,7 @@ class PublicRolloutTests(unittest.TestCase):
         self.default.write_text('platforms:\n  discord:\n    enabled: false\n')
         self.local = self.profile / 'config.yaml'
         self.local.write_text('platforms:\n  discord:\n    enabled: false\n  liberdus_moderator:\n    enabled: false\n')
-        (self.profile / 'plugins/liberdus-moderator/plugin.yaml').write_text('name: liberdus-moderator\nversion: 0.5.6\n')
+        (self.profile / 'plugins/liberdus-moderator/plugin.yaml').write_text('name: liberdus-moderator\nversion: 0.5.7\n')
         self.lock = self.profile / 'state/moderation.lock'
         self.lock.touch()
         self.database = self.profile / 'state/moderation.sqlite3'
@@ -50,13 +50,15 @@ class PublicRolloutTests(unittest.TestCase):
         self.guild = dict(id=GUILD, owner_id='2', roles=[dict(id=GUILD, permissions=str(VIEW|HISTORY|SEND)),
                                                                     dict(id='88', permissions='0')])
         self.channels = [self.channel(COMMITTERS, 'Committers', kind=4),
-                         self.channel('100', 'Community', kind=4), self.channel('101', 'Staff', kind=4),
-                         self.channel('201', 'general', parent='100'), self.channel('202', 'support', parent='100'),
+                         self.channel(INCLUDED_CATEGORIES[0], 'Community', kind=4), self.channel('101', 'Staff', kind=4),
+                         self.channel('201', 'general', parent=INCLUDED_CATEGORIES[0]), self.channel('202', 'support', parent=INCLUDED_CATEGORIES[1]),
                          self.channel('203', 'committer-chat', parent=COMMITTERS),
-                         self.channel('204', 'private-staff', parent='101', private=True),
+                         self.channel('204', 'private-staff', parent=INCLUDED_CATEGORIES[0], private=True),
                          self.channel(COMMAND, 'bot-mod', parent='101', private=True),
                          self.channel('1551249559819264030', 'bot-test-1', parent='101', private=True),
-                         self.channel('205', 'forum', kind=15), self.channel('206', 'announcements', kind=5)]
+                         self.channel('205', 'forum', kind=15), self.channel('206', 'announcements', kind=5),
+                         self.channel(INCLUDED_CATEGORIES[1], 'Community two', kind=4),
+                         self.channel('100', 'Other category', kind=4)]
         self.calls = []
 
     def channel(self, identity, name, *, parent=None, kind=0, private=False):
@@ -95,6 +97,37 @@ class PublicRolloutTests(unittest.TestCase):
         with self.assertRaisesRegex(RolloutError, 'Committers'):
             selection(self.config, inventory(self.config,self.get), ['100'])
 
+    def test_unselected_categories_permissions_do_not_block_or_expand_plan(self):
+        denied=self.channel('207','unselected',parent='100')
+        denied['permission_overwrites']=[dict(id=BOT,type=1,deny=str(VIEW|HISTORY),allow='0')]
+        self.channels.append(denied)
+        self.channels.append(self.channel('208','uncategorized'))
+        result=self.plan()
+        self.assertEqual(result['included_category_ids'],list(INCLUDED_CATEGORIES))
+        self.assertEqual([row['channel_id'] for row in result['selected_channels']],['201','202'])
+        self.assertEqual(next(row['reason'] for row in result['omitted'] if row['channel_id']=='207'),
+                         'outside_included_categories')
+        self.channels.append(self.channel('209','new-outside',parent='100'))
+        verify_plan(self.profile,self.get,now=1001)
+
+    def test_missing_included_category_or_tampered_wider_plan_is_rejected(self):
+        self.plan(); path=self.profile/PLAN_NAME
+        original=path.read_text()
+        for changes in ({'version':1}, {'included_category_ids':[]},
+                        {'included_category_ids':[ *INCLUDED_CATEGORIES,'100']}):
+            with self.subTest(changes=changes):
+                plan=json.loads(original); plan.update(changes); path.write_text(json.dumps(plan))
+                with self.assertRaises(ValueError): verify_plan(self.profile,self.get,now=1001)
+        path.write_text(original)
+        self.channels=[row for row in self.channels if row['id']!=INCLUDED_CATEGORIES[1] and row.get('parent_id')!=INCLUDED_CATEGORIES[1]]
+        with self.assertRaisesRegex(RolloutError,'included category'): self.plan()
+
+    def test_channel_leaving_included_categories_invalidates_plan(self):
+        self.plan()
+        self.channels[3]['parent_id']='100'
+        with self.assertRaisesRegex(RolloutError,'scope or categories'):
+            verify_plan(self.profile,self.get,now=1001)
+
     def test_missing_or_noncategory_exclusion_rejected(self):
         for excluded in ([COMMITTERS,'201'], [COMMITTERS,'999']):
             with self.subTest(excluded=excluded), self.assertRaisesRegex(RolloutError, 'not found'):
@@ -123,7 +156,7 @@ class PublicRolloutTests(unittest.TestCase):
 
     def test_missing_bot_access_refuses_partial_plan(self):
         self.channels[3]['permission_overwrites']=[dict(id=BOT,type=1,deny=str(VIEW),allow='0')]
-        with self.assertRaisesRegex(RolloutError,'Some public'): self.plan()
+        with self.assertRaisesRegex(RolloutError,'Some selected'): self.plan()
         self.assertFalse((self.profile/PLAN_NAME).exists())
 
     def test_admin_bot_refuses_plan(self):
@@ -142,6 +175,7 @@ class PublicRolloutTests(unittest.TestCase):
         self.assertEqual(original,self.config)
         self.assertTrue(updated.allow_public_monitored_channels)
         self.assertEqual(updated.excluded_category_ids,(COMMITTERS,))
+        self.assertEqual(updated.included_category_ids,INCLUDED_CATEGORIES)
         self.assertFalse(updated.actions_enabled)
         self.assertEqual(updated.classifier,self.config.classifier)
 
@@ -157,7 +191,7 @@ class PublicRolloutTests(unittest.TestCase):
         self.plan()
         self.channels[3]['name']='general-renamed'
         verify_plan(self.profile,self.get,now=1001)
-        self.channels.append(self.channel('207','new-channel'))
+        self.channels.append(self.channel('207','new-channel',parent=INCLUDED_CATEGORIES[0]))
         with self.assertRaisesRegex(RolloutError,'scope or categories'): verify_plan(self.profile,self.get,now=1001)
         self.channels.pop(); self.channels[3]['parent_id']=COMMITTERS
         with self.assertRaisesRegex(RolloutError,'scope or categories'): verify_plan(self.profile,self.get,now=1001)
@@ -211,6 +245,7 @@ class PublicRolloutTests(unittest.TestCase):
         self.assertEqual(saved.monitored_channel_ids,('201','202'))
         self.assertFalse(saved.actions_enabled)
         self.assertTrue(saved.allow_public_monitored_channels)
+        self.assertEqual(saved.included_category_ids,INCLUDED_CATEGORIES)
         self.assertEqual(saved.classifier,self.config.classifier)
         backup=Path(result['backup'])
         self.assertEqual((backup/'moderation.toml').read_bytes(),policy)

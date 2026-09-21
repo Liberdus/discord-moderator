@@ -1,6 +1,6 @@
 name: liberdus-moderator
 label: Liberdus Moderation
 kind: platform
-version: 0.5.6
+version: 0.5.7
 description: Scoped Discord moderation with optional JEV screening, private staff reviews, and opt-in deletion and staff timeouts.
 author: Liberdus

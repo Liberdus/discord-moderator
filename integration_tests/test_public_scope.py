@@ -79,6 +79,39 @@ class PublicScopeTests(unittest.IsolatedAsyncioTestCase):
             self.channels[identity].send.assert_not_awaited()
         self.assertEqual(len(self.adapter.store.incidents()), 1)
 
+    async def test_included_categories_ignore_moved_or_uncategorized_channels_keep_staff_destination(self):
+        self.adapter.policy=replace(self.adapter.policy,included_category_ids=('100',))
+        self.adapter.live=LiveSession(Engine(self.adapter.policy,self.adapter.store))
+        self.adapter.refresh_scope()
+        self.move(20,300)  # Private commands need not be inside a monitored category.
+        self.assertTrue(self.adapter.in_scope(1,20))
+        self.adapter.receive(self.message(100,10))
+        self.move(10,300)
+        await self.drain()
+        self.assertFalse(self.adapter.store.db.execute('SELECT 1 FROM messages').fetchone())
+        self.adapter.receive(self.message(101,10))
+        self.move(11,None)
+        self.adapter.receive(self.message(102,11))
+        self.adapter.receive(self.message(103,12))
+        await self.drain()
+        self.assertEqual([row[0] for row in self.adapter.store.db.execute('SELECT channel_id FROM messages')],['12'])
+        self.assertTrue(self.adapter.online)
+
+    async def test_included_category_move_during_jev_discards_result(self):
+        self.adapter.policy=replace(self.adapter.policy,included_category_ids=('100',))
+        await self.enable_screening()
+        entered,release=asyncio.Event(),asyncio.Event()
+        async def provider(payload):
+            entered.set(); await release.wait(); return screening_tests.response()
+        self.adapter.classifier.evaluator=provider
+        self.adapter.receive(self.message())
+        await self.drain(); await asyncio.wait_for(entered.wait(),1)
+        self.move(10,300,notify=False)
+        release.set(); await self.screened()
+        self.assertFalse(self.adapter.store.incidents())
+        self.channel.send.assert_not_awaited()
+        self.assertFalse(self.adapter.in_scope(1,10))
+
     async def test_legacy_flag_off_still_requires_private_monitors(self):
         self.adapter.policy = replace(self.adapter.policy, allow_public_monitored_channels=False,
                                       excluded_category_ids=())

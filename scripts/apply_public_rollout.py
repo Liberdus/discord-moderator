@@ -10,10 +10,10 @@ import subprocess
 import sys
 import tempfile
 
-UPDATER = Path('/tmp/liberdus-update-0.5.6-20260921.pyz')
-UPDATER_SHA256 = '72a4f6216a696e78098d24542169cfd083af62fef963f2e2aaa19dea63b72869'
-ROLLOUT = Path('/tmp/liberdus-public-rollout-20260921.pyz')
-ROLLOUT_SHA256 = '432a21a865a14401f142abc3a351aa1883685a9e972c3265d91dbbfe76e5d11c'
+UPDATER = Path('/tmp/liberdus-update-0.5.7-20260921.pyz')
+UPDATER_SHA256 = '17a731c307b486b39be0e6ff465b6cd5cd2cf93ce08b960c994db53b6d89f8cf'
+ROLLOUT = Path('/tmp/liberdus-category-rollout-20260921.pyz')
+ROLLOUT_SHA256 = '6880bb50753445dc39b6543371f38d824f24309727076e7bae2811994941e951'
 
 
 def run(argv):
@@ -52,7 +52,7 @@ def main():
             if hashlib.sha256(payload).hexdigest() != digest:
                 raise RuntimeError('Bundle hash does not match the reviewed release.')
             verified_bytes.append((source.name, payload))
-        with tempfile.TemporaryDirectory(prefix='liberdus-apply-public-056-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='liberdus-apply-categories-057-') as temporary:
             files = []
             for name, payload in verified_bytes:
                 target = Path(temporary) / name
@@ -68,11 +68,11 @@ def main():
             print('1/4 Disable moderation and restart the shared gateway', flush=True)
             run([hermes, '-p', 'liberdus-mod', 'config', 'set', 'platforms.liberdus_moderator.enabled', 'false'])
             restart(hermes)
-            step = 'installing the 0.5.6 code'
+            step = 'installing the 0.5.7 code'
             print('2/4 Install the update', flush=True)
             result = json.loads(run([sys.executable, str(files[0])]))
-            if result.get('updated') is not True or result.get('version') != '0.5.6':
-                raise RuntimeError('Updater did not confirm version 0.5.6.')
+            if result.get('updated') is not True or result.get('version') != '0.5.7':
+                raise RuntimeError('Updater did not confirm version 0.5.7.')
             step = 'applying the verified channel scope and disabling actions'
             print('3/4 Apply public observation scope; disable all moderation actions', flush=True)
             result = json.loads(run([sys.executable, str(files[1]), 'apply']))
@@ -84,8 +84,8 @@ def main():
             run([hermes, '-p', 'liberdus-mod', 'config', 'set', 'platforms.liberdus_moderator.enabled', 'true'])
             restart(hermes)
         print('Public observation configured and gateway restarts confirmed.')
-        print('In bot-mod, use !mod status and !mod summary. Expect Version: 0.5.6 and all action switches OFF.')
-        print('Committers is excluded. Only the saved public text-channel IDs are monitored; new channels are not added automatically.')
+        print('In bot-mod, use !mod status and !mod summary. Expect Version: 0.5.7 and all action switches OFF.')
+        print('Committers is excluded. Only the saved public text-channel IDs inside the two approved categories are monitored; new channels are not added automatically.')
         print('JEV budgets, usage, keys, review history and pause state were preserved. If paused, use !mod resume when ready.')
         return 0
     except KeyboardInterrupt:
