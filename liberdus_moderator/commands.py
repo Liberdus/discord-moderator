@@ -99,6 +99,12 @@ def handle_command(engine: Engine, request: CommandRequest):
             store.set_setting("action_epoch", store.get_setting("action_epoch", 0) + 1)
         except (ValueError, KeyError, TypeError, sqlite3.Error):
             return {**result, "ok": False, "error": "dismissal_not_saved_check_id_and_revision"}
+    elif name == "summary" and not arguments:
+        from .summary import summary_snapshot
+        try:
+            result["data"] = summary_snapshot(engine)
+        except (ValueError, TypeError, KeyError, sqlite3.Error):
+            return {**result, "ok": False, "error": "summary_unavailable"}
     elif name == "status" and not arguments:
         result["data"] = engine.status()
     elif name in ("pause", "resume") and not arguments:

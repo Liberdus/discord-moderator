@@ -93,13 +93,14 @@ class ScreeningJob:
 class MessageScreener(ShadowClassifier):
     """Reuse only the serial queue/task lifecycle, not incident-only accounting."""
 
-    def __init__(self, engine, evaluator, *, active=lambda: True, on_result=None):
+    def __init__(self, engine, evaluator, *, active=lambda: True, on_result=None, on_health=None):
         if engine.config.classifier.mode != "report_only" or not engine.config.ai_enabled:
             raise ValueError("Single-message screening requires explicit report_only opt-in")
         self.engine, self.store, self.config = engine, engine.store, engine.config
         self.settings = self.config.classifier
         self.evaluator, self.active = evaluator, active
         self.on_result = on_result or self.apply
+        self.on_health = on_health
         self.queue = asyncio.Queue(maxsize=self.settings.queue_capacity)
         self.queued, self.task, self.next_attempt_at = set(), None, 0.0
         self.provider_blocked = False
@@ -118,6 +119,15 @@ class MessageScreener(ShadowClassifier):
                                          "WHERE outcome IN ('running','awaiting_apply')").rowcount
             self.bump("unchecked", lost)
             self.state("ready")
+        if lost:
+            self.notify_health("restart_lost")
+
+    def notify_health(self, outcome):
+        if self.on_health is not None:
+            try:
+                self.on_health(outcome)
+            except Exception:
+                pass  # Monitoring must not change screening or replay an API call.
 
     def bump(self, name, count=1):
         name = "screening_" + name
@@ -173,6 +183,7 @@ class MessageScreener(ShadowClassifier):
         payload = encoded({"model": MODEL, "state": {"texts": [text], "urls": urls}, "questions": QUESTIONS})
         if len(payload) > self.settings.max_request_bytes:
             self.state("input_limit")
+            self.notify_health("input_limit")
             return None
         key = hashlib.sha256(encoded([identity, evidence["version"], self.config.policy_hash, SCREENING_HASH])).hexdigest()
         return ScreeningJob(key, identity, evidence["version"], self.config.policy_hash,
@@ -197,21 +208,30 @@ class MessageScreener(ShadowClassifier):
             except asyncio.QueueFull:
                 self.bump("unchecked")
                 self.state("queue_full")
+                self.notify_health("queue_full")
 
     def reserve(self, job):
+        accepted, skipped_reason = self._reserve(job)
+        # Run observers only after the accounting transaction commits. Duplicate
+        # deliveries and changed evidence are not new failed checks.
+        if skipped_reason is not None:
+            self.notify_health(skipped_reason)
+        return accepted
+
+    def _reserve(self, job):
         now = self.engine._now()
         day = int(now // 86400)
         with self.store.transaction():
             if self.store.db.execute("SELECT 1 FROM screening_attempts_v1 WHERE key=?", (job.key,)).fetchone():
-                return False
+                return False, None
             if now < self.store.get_setting("screening_last_attempt_at", 0) + self.settings.min_interval_seconds:
                 self.state("rate_limited_locally")
                 self.bump("unchecked")
-                return False
+                return False, "rate_limited_locally"
             prior = self.store.get_setting("screening_budget_day", day)
             if day < prior:
                 self.state("clock_rollback"); self.bump("unchecked")
-                return False
+                return False, "clock_rollback"
             if day != prior:
                 self.store.set_setting("screening_daily_calls", 0)
                 self.store.set_setting("screening_daily_reserved_microusd", 0)
@@ -221,17 +241,17 @@ class MessageScreener(ShadowClassifier):
                 if (self.store.get_setting(f"screening_{prefix}_calls", 0) >= calls or
                     self.store.get_setting(f"screening_{prefix}_reserved_microusd", 0) + RESERVED_MICROUSD > budget):
                     self.state("budget_exhausted"); self.bump("unchecked")
-                    return False
+                    return False, None
             # Retain replay protection through the message retention window.
             self.store.db.execute("DELETE FROM screening_attempts_v1 WHERE created_at<? "
                                   "AND outcome NOT IN ('running','awaiting_apply')",
                                   (now - self.config.storage.retention_seconds,))
             if self.store.db.execute("SELECT count(*) FROM screening_attempts_v1").fetchone()[0] >= self.config.storage.max_messages:
                 self.state("storage_limit"); self.bump("unchecked")
-                return False
+                return False, None
             evidence = self.evidence(job.message_id)
             if evidence is None:
-                self.bump("unchecked"); return False
+                self.bump("unchecked"); return False, None
             self.store.db.execute("INSERT INTO screening_attempts_v1 VALUES(?,?,?,?,?,?,?,?,?,?,NULL,?,'running',NULL,NULL,NULL)",
                 (job.key, job.message_id, job.version, job.policy_hash, SCREENING_HASH, MODEL,
                  job.evidence_hash, 1, evidence["created_at"], now, day))
@@ -239,7 +259,7 @@ class MessageScreener(ShadowClassifier):
                 self.bump(prefix + "_calls")
                 self.bump(prefix + "_reserved_microusd", RESERVED_MICROUSD)
             self.store.set_setting("screening_last_attempt_at", now)
-        return True
+        return True, None
 
     def finish(self, job, outcome, started, result=None):
         with self.store.transaction():
@@ -279,6 +299,7 @@ class MessageScreener(ShadowClassifier):
             if result["input_tokens"] > RESERVED_INPUT_TOKENS:
                 self.store.set_setting("screening_billing_guard", True)
                 self.finish(job, "usage_exceeds_reservation", started)
+                self.notify_health("usage_exceeds_reservation")
                 return
             self.finish(job, "awaiting_apply", started, result)
             # The live adapter schedules this behind already-arrived edits/commands.
@@ -286,9 +307,11 @@ class MessageScreener(ShadowClassifier):
             self.on_result(job)
         except asyncio.CancelledError:
             self.finish(job, "uncertain", started)
+            self.notify_health("uncertain")
             raise
         except TimeoutError:
             self.finish(job, "timeout", started)
+            self.notify_health("timeout")
         except Exception as error:
             from .jev import ProviderError
             code = str(error) if isinstance(error, ProviderError) else "provider_or_response_error"
@@ -296,6 +319,7 @@ class MessageScreener(ShadowClassifier):
                             "provider_overloaded", "http_error", "response_too_large", "invalid_json"}:
                 code = "provider_or_response_error"
             self.finish(job, code, started)
+            self.notify_health(code)
             if code in {"missing_key", "authentication_failed", "access_denied"}:
                 self.provider_blocked = True  # Correct credentials and restart; no repeated failed calls.
 
@@ -326,7 +350,11 @@ class MessageScreener(ShadowClassifier):
             self.store.db.execute("UPDATE screening_attempts_v1 SET outcome='incident_capacity' WHERE key=?", (job.key,))
             self.bump("unchecked")
             self.state("incident_capacity")
-            identity = None
+            outcome, identity = "incident_capacity", None
+        if outcome == "ok":
+            self.notify_health("ok")
+        elif outcome == "incident_capacity":
+            self.notify_health("storage_limit")
         return identity
 
 

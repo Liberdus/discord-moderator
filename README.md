@@ -1,8 +1,8 @@
-Latest: **0.5.4** fixes the five code-review findings: immediate durable stop controls, canceled button completion, exact membership IDs, broader staff-timeout protection and conservative JEV exemption for edits. `!mod status` includes the version. See [review fixes and owner installation](docs/review-fixes.md). Current flags, policy and budgets are preserved.
+Latest: **0.5.5** adds automatic private notices for interrupted JEV coverage and `!mod summary` for saved moderation counts and clearly scoped live/evaluation cost estimates. Neither makes new AI calls or changes action policy, flags or budgets. See [health alerts, summary and owner installation](docs/health-and-summary.md). The 0.5.4 review fixes remain included.
 
 # Liberdus Discord Moderator
 
-**Automated JEV screening evaluation:** a separate 44-case runner checks harmful and benign messages, including false automatic-deletion candidates, using the production decision rules. No Discord actions or manual test messages. See [run the evaluation](docs/screening-evaluation.md). The owner baseline returned 43/44 valid responses, with zero benign or ambiguous auto-delete candidates. A separate focused retry now adds safe diagnostics for the one failed call.
+**Automated JEV screening evaluation:** a separate 44-case runner checks harmful and benign messages, including false automatic-deletion candidates, using the production decision rules. No Discord actions or manual test messages. See [run the evaluation](docs/screening-evaluation.md). The owner baseline returned 43/44 valid responses, with zero benign or ambiguous auto-delete candidates. The separate focused retry succeeded, completing valid results for all 44 unique cases while preserving the original baseline and its failed attempt.
 
 **0.4.1 prepared:** [JEV role exemption](docs/role-exemption.md) for `1302455329795342377`, with observed membership, a separate exemption counter and unchanged repetition checks. The owner has now confirmed 0.4.0 single-message reporting and staff review; live exemption activation remains pending.
 

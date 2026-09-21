@@ -23,7 +23,7 @@ Three disagreements remain: `support_seed_priority` returned impersonation at sc
 
 `official_wallet_transfer` failed with the old generic `provider_or_response_error`. The old runner did not retain enough detail to identify the cause retrospectively. The updated **v2 helper** adds fixed error codes for connection/TLS/read failures, timeouts, specific rejected response fields, provider errors and unexpected runner failures. It never saves raw exceptions, response bodies, headers or credentials. Production validation, rubric, suite and deletion rules are unchanged.
 
-Run **only the failed case** from the Hermes terminal:
+The owner completed the focused retry with this command; no repeat call is needed:
 
 ```bash
 python3 \
@@ -31,7 +31,11 @@ python3 \
   retry official_wallet_transfer
 ```
 
-This deliberately permits **at most one new API call**, initially reserving **$0.002753** within the unchanged screening caps. It creates the separate run `retry-4d1dc69bc2d838cd`, linked to the failed `screening-v1` case and exact fixture/request/model/rubric. It cannot replace the original failure or charge other cases. No bot installation or restart is required. Existing action flags remain as configured; the helper has no Discord connection or action executor.
+The supplied result for `retry-4d1dc69bc2d838cd` was **1/1 valid and both labels matched**: `official_wallet_transfer` returned concern `impersonation`, purpose `other`, displayed score **0.91**, and **staff-report** routing in **354 ms**. The retry made one call, initially reserved **$0.002753**, and recorded a **$0.000039** known token estimate with **zero unknown-cost attempts in this retry**. Shared screening calls reached **60**.
+
+All **44 unique cases now have a valid result across the baseline and retry**. The original baseline stays **43/44** and its failed attempt/unknown-charge reservation remains recorded; the retry's zero unknown costs do not erase that earlier uncertainty. The three original disagreements and their expected labels remain unchanged. A successful retry still does not explain the original failure. The impersonation result goes to staff even above 0.90 because the automatic-delete rule is limited to sensitive requests.
+
+The explicit retry permits **at most one new API call**, initially reserving **$0.002753** within the unchanged screening caps. It creates the separate run `retry-4d1dc69bc2d838cd`, linked to the failed `screening-v1` case and exact fixture/request/model/rubric. It cannot replace the original failure or charge other cases. No bot installation or restart is required. Existing action flags remain as configured; the helper has no Discord connection or action executor.
 
 Repeating this exact command reuses its saved attempt, even if it failed or was interrupted; it does not keep buying retries. A later deliberate fresh attempt requires a distinct `--run-id`. A successful retry remains separate: the historical baseline still reports 43/44. A new failure can now show its safe diagnostic; a successful retry does not establish what caused the original failure.
 
@@ -89,7 +93,7 @@ The synthetic labels represent a small curated test set, not a random sample of 
 
 Review every benign or ambiguous auto-delete candidate before broadening action scope. Check whether a disagreement concerns communicative purpose, harmful intent or missing context. Preserve these baseline expectations and results; if the rubric changes, use a separately named suite with fresh held-out examples instead of relabeling the existing suite to make it pass. Keep actual provider outcomes separate from deterministic regression tests.
 
-**Status:** the owner supplied the real baseline outcomes recorded above. The developer workspace has not accessed the owner profile/key or made real provider calls. The focused retry is pending the v2 command above; offline regressions do not substitute for its actual provider result. Earlier ten- and five-case purpose-only evaluations remain documented in [JEV batch history](jev-batch.md).
+**Status:** the owner supplied the real baseline outcomes recorded above. The developer workspace has not accessed the owner profile/key or made real provider calls. The owner also supplied the successful focused retry recorded above; these real provider observations remain separate from offline regressions. The next live plugin update adds [automatic private health notices and a saved summary](health-and-summary.md), without another paid evaluation or a rubric change. Earlier ten- and five-case purpose-only evaluations remain documented in [JEV batch history](jev-batch.md).
 
 ## Original artifact
 
@@ -123,4 +127,4 @@ python3 scripts/build_screening_eval.py \
   --output /tmp/liberdus-jev-screening-v2-20260921.pyz
 ```
 
-The original helper and its recorded hashes above remain historical artifacts. A v2 focused preview confirmed exactly one selected fixture, no provider call and the $0.002753 initial reservation bound. The actual focused retry has not been run from the developer workspace.
+The original helper and its recorded hashes above remain historical artifacts. A v2 focused preview confirmed exactly one selected fixture, no provider call and the $0.002753 initial reservation bound. The actual focused retry was run by the owner, with its supplied result recorded above; no developer-workspace provider call was made.

@@ -67,6 +67,8 @@ database_path = "{self.profile}/state/moderation.sqlite3"
             self.assertTrue(await first.connect())
             self.assertTrue(first.online)
             self.assertIsNone(first.classifier)
+            self.assertIsNotNone(first.health)
+            self.assertFalse(first.health_task.done())
             secrets.assert_called_once_with("DISCORD_BOT_TOKEN", None)
             first.client.login.assert_awaited_once_with("fake-token")
             self.assertFalse(await second.connect())
@@ -74,6 +76,8 @@ database_path = "{self.profile}/state/moderation.sqlite3"
             self.assertTrue(first.online)
             await first.disconnect()
             self.assertIsNone(first.store)
+            self.assertIsNone(first.health_task)
+            self.assertIsNone(first.health)
             self.assertIsNone(first.lock_fd)
             first._release_platform_lock.assert_called_once()
 

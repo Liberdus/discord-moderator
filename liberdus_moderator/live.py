@@ -119,6 +119,7 @@ class LiveSession:
             return panel("Moderation help", [
                 "PRIVATE STAFF COMMANDS", "--------------------------------",
                 "!mod status", "Show connection and JEV usage.", "",
+                "!mod summary", "Show saved counts and cost scope.", "",
                 "!mod exempt-role", "Show role exemption setting.",
                 "!mod exempt-role on", "Skip JEV for configured roles.",
                 "!mod exempt-role off", "Check those members with JEV.",
@@ -141,6 +142,9 @@ class LiveSession:
                 "Applies to future JEV checks.", "Saved across gateway restarts.",
                 "Repetition checks stay active.", "Existing results are retained.",
                 "!mod exempt-role on / off"])
+        if event.command == "summary":
+            from .summary import format_summary
+            return format_summary(response["data"], connected)
         if event.command == "selftest":
             from .selftest import format_summary
             return format_summary(response["data"])

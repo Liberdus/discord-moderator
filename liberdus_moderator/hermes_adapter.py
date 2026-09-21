@@ -28,6 +28,7 @@ from .live import LiveSession, delivery_nonce, parse_command
 from .models import MessageEvent
 from .member_roles import checked_membership, membership_roles
 from .storage import Store
+from .health import HealthMonitor
 
 REVIEW_BUTTONS = {"liberdus:assess:v1:" + label: label for label in ("needs-attention", "looks-okay", "unsure")}
 LEGACY_REVIEW_BUTTONS = {"liberdus:review:v1:" + label for label in ("promotion", "not-promotion", "unsure")}
@@ -125,6 +126,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         self.store = self.live = self.policy = None
         self.worker = self.receiver = None
         self.classifier = None
+        self.health = self.health_task = None
         self.processing_evidence = False
         self.classifier_candidates = set()
         self.auto_delete_candidates = set()
@@ -179,6 +181,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             self.owns_token_lock = True
             self.store = Store(str(database))
             self.live = LiveSession(Engine(self.policy, self.store))
+            self.health = HealthMonitor(self.live.engine)
             self.coverage_gap("startup")
             self.closing = False
             self.client = PilotClient(self)
@@ -192,10 +195,12 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             elif self.policy.classifier.mode == "report_only":
                 from .screening import MessageScreener
                 self.classifier = MessageScreener(self.live.engine, self.evaluate_jev, active=self.classifier_active,
-                                                 on_result=lambda job: self.enqueue("screen_result", job))
+                                                 on_result=lambda job: self.enqueue("screen_result", job),
+                                                 on_health=self.health_outcome)
                 self.classifier.start()
             self.worker = asyncio.create_task(self.run_worker())
             self.receiver = asyncio.create_task(self.run_receiver())
+            self.health_task = asyncio.create_task(self.run_health())
             waiter = asyncio.create_task(self.ready_event.wait())
             try:
                 await asyncio.wait((waiter, self.receiver), timeout=40, return_when=asyncio.FIRST_COMPLETED)
@@ -248,6 +253,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
                         self.classifier_candidates.discard(evidence.message_id)
                         self.store.set_setting("screening_unchecked", self.store.get_setting("screening_unchecked", 0) + 1)
                         self.store.set_setting("screening_state", "membership_unavailable")
+                        self.health_outcome("membership_unavailable")
                     elif self.live.engine.role_exempt(evidence.author_role_ids):
                         self.store.set_setting("screening_exempt", self.store.get_setting("screening_exempt", 0) + 1)
                     else:
@@ -319,6 +325,8 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             self.stop_reply_pending = True
         if self.live is not None:
             self.live.gap(reason)
+        if self.health is not None:
+            self.health.gap(reason)
         if self.classifier is not None and self.policy.classifier.mode == "report_only":
             self.classifier.invalidate()
 
@@ -610,6 +618,53 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             return str(content) + "\nReport display updated."
         return str(content) + "\nNo retained report to update. Use !mod incident ID to see the saved assessment."
 
+    def health_outcome(self, outcome):
+        # Advisory bookkeeping cannot alter the classifier result or action decision.
+        if self.health is not None:
+            with contextlib.suppress(Exception):
+                if outcome == "ok":
+                    self.health.record_success()
+                elif outcome == "restart_lost":
+                    self.health.gap("restart_lost")
+                else:
+                    self.health.record_failure(outcome)
+
+    async def flush_health(self):
+        if self.health is None or self.closing:
+            return
+        if self.online:
+            # Recheck current activation/policy and the private destination before
+            # reserving a delivery. A failed permission check makes no send attempt.
+            if not self.policy_current():
+                return
+            try:
+                self.checked_channel(self.policy.command_channel_ids[0], sending=True)
+            except ValueError:
+                return
+        notice = self.health.claim(self.online)
+        if notice is None:
+            return
+        try:
+            await self.emit(notice["channel_id"], notice["content"], delivery_nonce("health:" + notice["token"]))
+            self.health.finish(notice["token"], True)
+        except asyncio.CancelledError:
+            self.health.finish(notice["token"], False)
+            raise
+        except Exception:
+            self.health.finish(notice["token"], False)
+
+    async def run_health(self):
+        # Independent of message traffic: budgets can be consumed by evaluation,
+        # and outage notices must not require a new monitored message to deliver.
+        try:
+            while not self.closing:
+                await self.flush_health()
+                await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await self.fail("health_monitor_failure")
+
     async def flush_reports(self):
         while self.online:
             report = self.live.claim_report()
@@ -767,12 +822,12 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         self.stop_replies.clear()
         self.stop_reply_pending = False
         current = asyncio.current_task()
-        for task in (self.worker, self.receiver):
+        for task in (self.health_task, self.worker, self.receiver):
             if task is not None and task is not current:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
-        self.worker = self.receiver = None
+        self.worker = self.receiver = self.health_task = None
         receiving = {task for task in self.interaction_receivers if task is not current and not task.done()}
         if receiving:
             # Deferral is capped at 2s and its completion at 10s. No new deferred
@@ -807,6 +862,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
         if self.store is not None:
             self.store.close()
             self.store = self.live = None
+        self.health = None
         if self.owns_token_lock:
             self._release_platform_lock()
             self.owns_token_lock = False
