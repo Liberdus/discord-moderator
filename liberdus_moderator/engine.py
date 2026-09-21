@@ -263,7 +263,7 @@ class Engine:
             f"Rule: {match.rule_id}\nAuthor ID: {match.author_id}\n"
             f"Observed copies: {len(match.evidence)}\n"
             "Report-only; no public action.\n" + "\n".join(links) + "\n"
-            "Choose Promotion, Not promotion, or Unsure below. Human review only."
+            "Staff assessment: Needs attention, Looks okay, or Unsure. Feedback only; no moderation action."
         )
         return {
             "guild_id": self.config.guild_id, "channel_id": destination,

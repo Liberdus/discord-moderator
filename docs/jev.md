@@ -6,6 +6,8 @@ Implemented in 0.3.0; **disabled in the installation bundle**. The chosen scope 
 
 **Human review update prepared — September 21, 2026:** 0.3.4 adds [private review buttons and saved message evidence](moderator-review.md). A moderator can record Promotion / Not promotion / Unsure beside JEV's unchanged saved answer. This creates local review evidence, with no provider call, automatic training, report suppression or enforcement. The live rubric remains context-v1; precedence-v2 remains experimental. Deployment and the live button check are pending.
 
+**Staff workflow selected — September 21, 2026:** the prepared [0.3.5 update](staff-assessment.md) separates staff triage (Needs attention / Looks okay / Unsure) from JEV's content category. It adds visible report refreshes and a pending list. Old promotion feedback is retained without reinterpretation. A permitted promotion can be acceptable to staff; these broader judgments must not automatically overwrite JEV categories or be treated as direct classification ground truth. No rubric, caps, provider calls or enforcement settings change for this release.
+
 ## Integration review before implementation — September 20, 2026
 
 | Option reviewed | What it provides | Decision for `liberdus-mod` |

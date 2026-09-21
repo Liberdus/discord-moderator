@@ -57,10 +57,10 @@ class ModeratorReviewTests(unittest.TestCase):
         lookup = handle_command(self.engine, self.lookup)["data"]
         self.assertEqual(lookup["classification"], {"outcome": "not_evaluated"})
         self.assertEqual(lookup["moderator_review"]["label"], "not_promotion")
-        rendered = self.live.command(self.lookup, "900", True)
-        self.assertIn("MODERATOR REVIEW", rendered)
+        rendered = self.live.command(replace(self.lookup, command="explain"), "900", True)
+        self.assertIn("LEGACY CONTENT LABEL", rendered)
         self.assertIn("Not promotion", rendered)
-        self.assertIn("**Reviewer ID** `98`", rendered)
+        self.assertIn("Staff     : Not reviewed", rendered)
         self.assertIn("Friday maintenance", rendered)
         self.assertIn("Open message 1", rendered)
         self.assertLessEqual(units(rendered), 1900)
@@ -196,13 +196,13 @@ class ModeratorReviewTests(unittest.TestCase):
         identity = store.incidents()[0]["id"]
         request = replace(self.lookup, arguments=(identity,))
         rendered = live.command(request, "907", True)
-        self.assertEqual(rendered.count("```"), 2)
+        self.assertEqual(rendered.count("```"), 4)
         self.assertNotIn("@everyone", rendered)
         self.assertNotIn("<@123>", rendered)
         self.assertNotIn("https://evil.example", rendered)
         self.assertNotIn("\u202e", rendered)
         self.assertIn("https://discord.com/channels/1/10/200", rendered)
-        self.assertIn("Excerpt", rendered)
+        self.assertIn("excerpt", rendered)
         self.assertLessEqual(units(rendered), 1900)
         self.assertEqual(store.incident(identity)["evidence"][0]["content"], malicious)
 
@@ -224,10 +224,14 @@ class ModeratorReviewTests(unittest.TestCase):
             "evidence_state": "historical", "reason": "clock_changed"}
         incident["moderator_review"] = {"state": "historical", "label": "not_promotion", "revision": 999999999,
             "reviewer_id": config.operator_user_ids[0], "reviewed_at": self.now}
+        incident["staff_assessment"] = {"state": "historical", "label": "needs_attention", "revision": 999999999,
+            "reviewer_id": config.operator_user_ids[0], "reviewed_at": self.now,
+            "applies_to_snapshot": True, "complete": False}
         incident["evidence_view"] = saved_evidence(engine, incident)
         text = format_incident(incident)
+        self.assertLessEqual(units(format_incident(incident, details=True)), 1900)
         self.assertLessEqual(units(text), 1900)
-        self.assertIn("Saved text preview", text)
+        self.assertIn("SAVED MESSAGE", text)
         self.assertIn("😀", text)
         self.assertIn("Open message 3", text)
         panel = text.split("```")[1]

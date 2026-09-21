@@ -25,7 +25,16 @@ from .live import LiveSession, delivery_nonce, parse_command
 from .models import MessageEvent
 from .storage import Store
 
-REVIEW_BUTTONS = {"liberdus:review:v1:" + label: label for label in ("promotion", "not-promotion", "unsure")}
+REVIEW_BUTTONS = {"liberdus:assess:v1:" + label: label for label in ("needs-attention", "looks-okay", "unsure")}
+LEGACY_REVIEW_BUTTONS = {"liberdus:review:v1:" + label for label in ("promotion", "not-promotion", "unsure")}
+
+
+def assessment_buttons():
+    view = discord.ui.View(timeout=None)
+    labels = {"needs-attention": "Needs attention", "looks-okay": "Looks okay", "unsure": "Unsure"}
+    for identity, label in REVIEW_BUTTONS.items():
+        view.add_item(discord.ui.Button(label=labels[label], style=discord.ButtonStyle.secondary, custom_id=identity))
+    return view
 
 VERIFIED_COMMIT = "c1488ac947c9bc33fd65ec464548dc9d8edd6122"
 
@@ -324,7 +333,7 @@ class ModerationAdapter(BasePlatformAdapter):
         if not isinstance(data, dict) or not isinstance(data.get("custom_id"), str):
             return
         if (interaction.type != discord.InteractionType.component or data.get("component_type") != 2
-                or data.get("custom_id") not in REVIEW_BUTTONS):
+                or data.get("custom_id") not in set(REVIEW_BUTTONS) | LEGACY_REVIEW_BUTTONS):
             return
         message = interaction.message
         if (not self.in_scope(interaction.guild_id, interaction.channel_id)
@@ -334,8 +343,11 @@ class ModerationAdapter(BasePlatformAdapter):
                 or message.channel.id != interaction.channel_id):
             await self.interaction_notice(interaction, "Review unavailable here or for this account.")
             return
+        if data["custom_id"] in LEGACY_REVIEW_BUTTONS:
+            await self.interaction_notice(interaction, "These old buttons record content labels. Use !mod incident ID for the new staff assessment buttons.")
+            return
         event = CommandRequest(str(interaction.guild_id), str(interaction.channel_id), str(interaction.user.id),
-                               "review", arguments=(REVIEW_BUTTONS[data["custom_id"]],),
+                               "assess", arguments=(REVIEW_BUTTONS[data["custom_id"]],),
                                reply_to_message_id=str(message.id))
         if self.live.review_reply_target(event) is None:
             await self.interaction_notice(interaction, "Saved report link unavailable. Request a new !mod incident ID view.")
@@ -360,12 +372,7 @@ class ModerationAdapter(BasePlatformAdapter):
         if not self.online or self.closing:
             raise ValueError("Moderation transport is offline")
         channel = self.checked_channel(channel_id, sending=True)
-        view = None
-        if reviewable:
-            view = discord.ui.View(timeout=None)
-            labels = {"promotion": "Promotion", "not-promotion": "Not promotion", "unsure": "Unsure"}
-            for identity, label in REVIEW_BUTTONS.items():
-                view.add_item(discord.ui.Button(label=labels[label], style=discord.ButtonStyle.secondary, custom_id=identity))
+        view = assessment_buttons() if reviewable else None
         try:
             return await asyncio.wait_for(channel.send(str(content), allowed_mentions=discord.AllowedMentions.none(),
                 nonce=nonce, suppress_embeds=True, silent=True, view=view), timeout=20)
@@ -375,13 +382,53 @@ class ModerationAdapter(BasePlatformAdapter):
                 # No per-message callbacks need to survive in memory or be re-registered after restart.
                 view.stop()
 
+    async def refresh_assessment_messages(self, content, event):
+        assessment = getattr(content, "assessment", None)
+        if assessment is None:
+            return content
+        generation = self.generation
+        succeeded, failed = 0, 0
+        try:
+            targets = self.live.assessment_messages(event, assessment["incident_id"])
+        except Exception:
+            return str(content) + "\nReport display unavailable. Use !mod incident ID to see the saved assessment."
+        for message_id, identity, revision in targets:
+            view = None
+            try:
+                if generation != self.generation or not self.online or self.closing:
+                    raise ValueError("Connection changed")
+                channel = self.checked_channel(event.channel_id, sending=True)
+                message = await asyncio.wait_for(channel.fetch_message(int(message_id)), timeout=5)
+                if (str(message.id) != message_id or str(message.author.id) != self.policy.bot_user_id
+                        or str(message.channel.id) != event.channel_id or str(message.guild.id) != self.policy.guild_id
+                        or generation != self.generation or not self.online or self.closing):
+                    raise ValueError("Saved bot report unavailable")
+                self.checked_channel(event.channel_id, sending=True)
+                updated = self.live.render_snapshot(identity, revision)
+                view = assessment_buttons()
+                await asyncio.wait_for(message.edit(content=updated, view=view, suppress=True,
+                    allowed_mentions=discord.AllowedMentions.none()), timeout=5)
+                succeeded += 1
+            except Exception:
+                failed += 1  # Stored assessment remains valid; no send fallback or mutation retry.
+            finally:
+                if view is not None:
+                    view.stop()
+        if failed:
+            return str(content) + "\nSome report displays could not be updated. Use !mod incident ID to see the saved assessment."
+        if succeeded:
+            return str(content) + "\nReport display updated."
+        return str(content) + "\nNo retained report to update. Use !mod incident ID to see the saved assessment."
+
     async def flush_reports(self):
         while self.online:
             report = self.live.claim_report()
             if report is None:
                 return
             try:
-                sent = await self.emit(report["payload"]["channel_id"], report["payload"]["content"],
+                content = (self.live.render_snapshot(report["incident_id"], report["incident_revision"])
+                           if report["kind"] == "moderator" else report["payload"]["content"])
+                sent = await self.emit(report["payload"]["channel_id"], content,
                                        delivery_nonce("report:" + report["id"]), reviewable=report["kind"] == "moderator")
                 self.live.finish_report(report["id"], str(sent.id))
             except asyncio.CancelledError:
@@ -425,6 +472,7 @@ class ModerationAdapter(BasePlatformAdapter):
                         self.next_command_at = now + 1
                         content = self.live.command(value[1], value[0], self.online)
                         if content:
+                            content = await self.refresh_assessment_messages(content, value[1])
                             try:
                                 target = getattr(content, "review_target", None)
                                 sent = await self.emit(value[1].channel_id, content, delivery_nonce("command:" + value[0]),
@@ -447,6 +495,8 @@ class ModerationAdapter(BasePlatformAdapter):
                             continue
                         self.next_command_at = now + 1
                         content = self.live.command(event, "interaction:" + str(interaction.id), self.online)
+                        if content:
+                            content = await self.refresh_assessment_messages(content, event)
                         await self.interaction_notice(interaction, content or "This interaction was already processed or is no longer authorized.",
                                                       deferred=True)
                     # Drain already-arrived edits/messages before handing a report to the network.

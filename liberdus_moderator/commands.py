@@ -86,14 +86,24 @@ def handle_command(engine: Engine, request: CommandRequest):
         incident = store.incident(arguments[0])
         if incident is None:
             return {**result, "ok": False, "error": "incident_not_found"}
-        from .classification_view import saved_classification
-        from .evidence_view import saved_evidence
-        from .moderator_review import saved_review
-        result["data"] = {**incident, "classification": saved_classification(engine, incident),
-                          "evidence_view": saved_evidence(engine, incident),
-                          "moderator_review": saved_review(engine, incident)}
+        from .classification_view import incident_view
+        result["data"] = incident_view(engine, incident)
         if name == "explain":
             result["note"] = "Saved rule evidence and stored JEV results; no actions, policy changes, or new AI calls."
+    elif name == "assess" and len(arguments) == 3:
+        from .staff_review import record_assessment
+        try:
+            result["data"] = record_assessment(engine, *arguments, reviewer_id=request.user_id)
+        except (ValueError, KeyError, TypeError, sqlite3.Error):
+            return {**result, "ok": False, "error": "assessment_not_saved_check_id_revision_label_and_evidence"}
+    elif name == "pending" and len(arguments) <= 1:
+        from .staff_review import pending_page
+        try:
+            if arguments and not re.fullmatch(r"[1-9][0-9]{0,3}", arguments[0]):
+                raise ValueError
+            result["data"] = pending_page(engine, int(arguments[0]) if arguments else 1)
+        except (ValueError, sqlite3.Error):
+            return {**result, "ok": False, "error": "pending_page_unavailable"}
     elif name == "review" and len(arguments) == 3:
         from .moderator_review import record_review
         try:

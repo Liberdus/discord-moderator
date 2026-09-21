@@ -1,5 +1,7 @@
 # Human review buttons and saved message evidence
 
+**Current release: 0.3.5 prepared.** The [staff assessment runbook](staff-assessment.md) supersedes the older interaction and installation instructions below. It adds Needs attention / Looks okay / Unsure, report refreshes and `!mod pending`; old content labels remain distinct. The following sections preserve the earlier release record.
+
 Version **0.3.4**, September 21, 2026. Implemented and tested with synthetic profiles and the pinned Hermes/Discord SDK; installation and live Discord button/display checks are still pending. The last owner-confirmed live version is 0.3.3.
 
 ## Review an incident in bot-mod

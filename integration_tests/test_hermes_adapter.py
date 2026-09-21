@@ -195,7 +195,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_awaited_once()
         args, kwargs = self.channel.send.call_args
         self.assertIn("Label     : Quoted warning", args[0])
-        self.assertEqual(args[0].count("```"), 2)
+        self.assertEqual(args[0].count("```"), 4)
         self.assertIn("no new AI call", args[0])
         self.assertIn("Repeated test message", args[0])
         self.assertIn("Open message 1", args[0])
@@ -225,11 +225,11 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             await self.drain()
             self.assertEqual(self.channel.send.await_count, 1)
             self.adapter.next_command_at = 0
-            self.adapter.receive(self.message(304, 20, 98, "!mod incident " + identity))
+            self.adapter.receive(self.message(304, 20, 98, "!mod explain " + identity))
             await self.drain()
         text = self.channel.send.call_args.args[0]
         self.assertIn("Not promotion", text)
-        self.assertIn("MODERATOR REVIEW", text)
+        self.assertIn("LEGACY CONTENT LABEL", text)
         self.assertIn("Repeated saved message", text)
         self.assertNotIn("@everyone", text)
         self.assertIn("https://discord.com/channels/1/10/100", text)
@@ -275,9 +275,9 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         provider.assert_awaited_once()
         await worker.close()
 
-    def interaction(self, identity=800, label="promotion", **updates):
+    def interaction(self, identity=800, label="needs-attention", **updates):
         values = dict(id=identity, type=discord.InteractionType.component,
-            data={"component_type": 2, "custom_id": "liberdus:review:v1:" + label},
+            data={"component_type": 2, "custom_id": "liberdus:assess:v1:" + label},
             guild_id=1, channel_id=20, user=SimpleNamespace(id=98, bot=False),
             message=SimpleNamespace(id=700, author=SimpleNamespace(id=99), channel=SimpleNamespace(id=20)),
             response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock()),
@@ -292,7 +292,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         return self.adapter.store.incidents()[0]["id"]
 
     def reviews(self):
-        from liberdus_moderator.moderator_review import TABLE
+        from liberdus_moderator.staff_review import TABLE
         if not self.adapter.store.db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (TABLE,)).fetchone():
             return []
         return list(self.adapter.store.db.execute(f"SELECT * FROM {TABLE} ORDER BY sequence"))
@@ -300,23 +300,23 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_three_buttons_store_labels_ephemerally_without_ai_or_rule_changes(self):
         await self.create_report()
         view = self.channel.send.call_args.kwargs["view"]
-        self.assertEqual([child.label for child in view.children], ["Promotion", "Not promotion", "Unsure"])
+        self.assertEqual([child.label for child in view.children], ["Needs attention", "Looks okay", "Unsure"])
         self.assertTrue(view.is_persistent())
         self.assertTrue(view.is_finished())  # No unbounded per-message SDK callback cache.
         self.assertEqual(len(view.to_components()[0]["components"]), 3)
         before = [tuple(row) for row in self.adapter.store.db.execute("SELECT * FROM incident_versions")]
         with patch("liberdus_moderator.jev.evaluate", side_effect=AssertionError("No provider call")), \
              patch("liberdus_moderator.hermes_adapter.current_secret_scope", side_effect=AssertionError("No key")):
-            for index, label in enumerate(("promotion", "not-promotion", "unsure")):
+            for index, label in enumerate(("needs-attention", "looks-okay", "unsure")):
                 self.adapter.next_command_at = 0
                 interaction = self.interaction(800+index, label)
                 await self.adapter.receive_review_click(interaction)
                 await self.drain()
                 interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
-                self.assertIn("Moderator review saved", interaction.followup.send.call_args.args[0])
+                self.assertIn("Staff assessment saved", interaction.followup.send.call_args.args[0])
                 self.assertTrue(interaction.followup.send.call_args.kwargs["ephemeral"])
                 self.assertEqual(interaction.followup.send.call_args.kwargs["allowed_mentions"].to_dict()["parse"], [])
-        self.assertEqual([row["label"] for row in self.reviews()], ["promotion", "not_promotion", "unsure"])
+        self.assertEqual([row["label"] for row in self.reviews()], ["needs_attention", "looks_okay", "unsure"])
         self.assertEqual(before, [tuple(row) for row in self.adapter.store.db.execute("SELECT * FROM incident_versions")])
         self.channel.send.assert_awaited_once()  # Click acknowledgement is private to the clicker.
         self.assertEqual(self.adapter.live.status(True)["ai_attempts"], 0)
@@ -390,7 +390,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.receive(self.message(309, 20, 98, "!mod incident " + identity))
         await self.drain()
         self.assertEqual([child.label for child in self.channel.send.call_args.kwargs["view"].children],
-                         ["Promotion", "Not promotion", "Unsure"])
+                         ["Needs attention", "Looks okay", "Unsure"])
         self.assertGreater(self.adapter.store.incident(identity)["revision"], 1)
         # A fresh SDK client has no registered per-message views. Raw interaction
         # dispatch still resolves the persisted message -> displayed revision binding.
@@ -425,6 +425,121 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.drain()
         self.assertEqual(self.reviews(), [])
         self.assertIn("Review not saved", expired.followup.send.call_args.args[0])
+
+    def editable_reports(self, *identities):
+        messages = {identity: self.message(identity, 20, 99, content="Untrusted fetched body is not used")
+                    for identity in identities}
+        for message in messages.values():
+            message.edit = AsyncMock()
+        self.channel.fetch_message = AsyncMock(side_effect=lambda identity: messages[identity])
+        return messages
+
+    async def test_assessment_updates_original_report_and_completes_staff_queue(self):
+        from liberdus_moderator.staff_review import pending_page
+        identity = await self.create_report()
+        messages = self.editable_reports(700)
+        with patch("liberdus_moderator.jev.evaluate", side_effect=AssertionError("No model call")):
+            click = self.interaction(label="looks-okay")
+            await self.adapter.receive_review_click(click)
+            await self.drain()
+        messages[700].edit.assert_awaited_once()
+        update = messages[700].edit.call_args.kwargs
+        self.assertIn("Staff     : Looks okay", update["content"])
+        self.assertIn("Review    : Complete", update["content"])
+        self.assertIn("Reviewed by <@98>", update["content"])
+        self.assertIn("Incident ID\n" + identity, update["content"])
+        self.assertNotIn("Untrusted fetched body", update["content"])
+        self.assertTrue(update["suppress"])
+        self.assertEqual(update["allowed_mentions"].to_dict()["parse"], [])
+        self.assertEqual([child.label for child in update["view"].children], ["Needs attention", "Looks okay", "Unsure"])
+        self.assertEqual(pending_page(self.adapter.live.engine)["total"], 0)
+        self.assertIn("Report display updated", click.followup.send.call_args.args[0])
+        self.channel.send.assert_awaited_once()
+
+    async def test_click_on_incident_view_refreshes_both_it_and_latest_report(self):
+        identity = await self.create_report()
+        self.channel.send.return_value = SimpleNamespace(id=701)
+        self.adapter.receive(self.message(310, 20, 98, "!mod incident " + identity))
+        await self.drain()
+        messages = self.editable_reports(700, 701)
+        self.adapter.next_command_at = 0
+        click = self.interaction(message=self.message(701, 20, 99))
+        await self.adapter.receive_review_click(click)
+        await self.drain()
+        for message in messages.values():
+            message.edit.assert_awaited_once()
+            self.assertIn("Staff     : Needs attention", message.edit.call_args.kwargs["content"])
+        self.assertEqual(self.channel.send.await_count, 2)
+
+    async def test_failed_report_edit_preserves_assessment_and_never_replays_mutation(self):
+        from liberdus_moderator.staff_review import pending_page
+        await self.create_report()
+        messages = self.editable_reports(700)
+        messages[700].edit.side_effect = TimeoutError()
+        first = self.interaction(label="looks-okay")
+        await self.adapter.receive_review_click(first)
+        await self.drain()
+        self.assertIn("could not be updated", first.followup.send.call_args.args[0])
+        self.assertEqual(pending_page(self.adapter.live.engine)["total"], 0)
+        self.assertEqual(len(self.reviews()), 1)
+        self.adapter.next_command_at = 0
+        duplicate = self.interaction(label="looks-okay")
+        await self.adapter.receive_review_click(duplicate)
+        await self.drain()
+        messages[700].edit.assert_awaited_once()
+        self.assertEqual(len(self.reviews()), 1)
+        self.channel.send.assert_awaited_once()
+        self.assertTrue(self.adapter.online)
+
+    async def test_refresh_refuses_wrong_author_and_permission_change_after_fetch(self):
+        await self.create_report()
+        messages = self.editable_reports(700)
+        messages[700].author.id = 50
+        first = self.interaction()
+        await self.adapter.receive_review_click(first)
+        await self.drain()
+        messages[700].edit.assert_not_awaited()
+        self.assertIn("could not be updated", first.followup.send.call_args.args[0])
+        messages[700].author.id = 99
+        def changed_permissions(identity):
+            self.channel.permissions_for.side_effect = lambda member: SimpleNamespace(
+                administrator=False, view_channel=True, read_message_history=True, send_messages=True)
+            return messages[identity]
+        self.channel.fetch_message.side_effect = changed_permissions
+        self.adapter.next_command_at = 0
+        second = self.interaction(801, "unsure")
+        await self.adapter.receive_review_click(second)
+        await self.drain()
+        messages[700].edit.assert_not_awaited()
+        self.assertEqual(len(self.reviews()), 2)
+
+    async def test_legacy_buttons_explain_upgrade_without_reinterpreting_old_label(self):
+        await self.create_report()
+        legacy = self.interaction(data={"component_type": 2, "custom_id": "liberdus:review:v1:promotion"})
+        await self.adapter.receive_review_click(legacy)
+        await self.drain()
+        legacy.response.defer.assert_not_awaited()
+        self.assertIn("old buttons record content labels", legacy.response.send_message.call_args.args[0])
+        self.assertEqual(self.reviews(), [])
+
+    async def test_text_assessment_refreshes_report_and_pending_is_authorized(self):
+        identity = await self.create_report()
+        messages = self.editable_reports(700)
+        self.adapter.receive(self.message(311, 20, 98, "!mod assess " + identity + " 1 unsure"))
+        await self.drain()
+        messages[700].edit.assert_awaited_once()
+        self.assertIn("Staff assessment saved", self.channel.send.call_args.args[0])
+        self.adapter.next_command_at = 0
+        self.adapter.receive(self.message(312, 20, 98, "!mod pending"))
+        await self.drain()
+        self.assertIn("1 pending", self.channel.send.call_args.args[0])
+        self.assertIn("Unsure", self.channel.send.call_args.args[0])
+        count = self.channel.send.await_count
+        for user, channel in ((50, 20), (98, 10)):
+            self.adapter.next_command_at = 0
+            self.adapter.receive(self.message(313+channel, channel, user, "!mod pending"))
+            await self.drain()
+        self.assertEqual(self.channel.send.await_count, count)
 
     async def test_edit_fetch_failure_records_gap_and_discards_pending_window(self):
         self.adapter.receive(self.message())

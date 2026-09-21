@@ -1,5 +1,7 @@
 # Saved JEV results in private incident replies
 
+**Current release: 0.3.5 prepared.** The [staff assessment runbook](staff-assessment.md) supersedes the older interaction and installation instructions below. It adds Needs attention / Looks okay / Unsure, report refreshes and `!mod pending`; old content labels remain distinct. The following sections preserve the earlier release record.
+
 **Current update, September 21, 2026:** 0.3.4 adds moderator review buttons, saved message previews and explicit source links. The [0.3.4 runbook](moderator-review.md) is the current installation and verification guide; deployment is pending. The 0.3.3 behavior and completed deployment below are retained as historical reference. New incident replies record a revision binding in addition to the existing command receipt, and can show saved evidence outside the metadata panel.
 
 The owner confirmed the **0.3.2** lookup live in `bot-mod`: the quoted-warning incident returned its saved label, confidence 1.00, evaluated revision 1 and historical status while the incident was revision 2, `needs_revalidation`. The supplied reply said no new AI call; no separate before/after accounting transcript was supplied.

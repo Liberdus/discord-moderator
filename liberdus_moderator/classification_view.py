@@ -27,6 +27,7 @@ REASONS = {
     "incident_changed": "incident closed or window reset",
     "expired": "evidence window expired",
     "revision_changed": "incident revision changed",
+    "displayed_revision": "evaluation covers a different snapshot",
     "evidence_changed": "evidence changed or unavailable",
 }
 
@@ -170,26 +171,81 @@ def format_moderator_review(view):
     return "\n".join(lines)
 
 
-def format_incident(incident):
-    """Keep long copyable IDs outside the 32-column, single-column data panel."""
+def incident_view(engine, incident, revision=None):
+    from .evidence_view import saved_evidence
+    from .moderator_review import saved_review
+    from .staff_review import saved_assessment, snapshot
+    evidence = incident["evidence"] if revision is None else snapshot(engine, incident, revision)
+    view = {**incident, "revision": incident["revision"] if revision is None else revision,
+            "latest_revision": incident["revision"], "evidence": evidence,
+            "classification": saved_classification(engine, incident),
+            "moderator_review": saved_review(engine, incident),
+            "staff_assessment": saved_assessment(engine, incident, revision)}
+    if (view["classification"].get("evidence_state") == "current"
+            and view["classification"].get("revision") != view["revision"]):
+        view["classification"] = {**view["classification"], "evidence_state": "historical", "reason": "displayed_revision"}
+    view["evidence_view"] = saved_evidence(engine, view)
+    return view
+
+
+def format_incident(incident, *, details=False):
+    from .evidence_view import format_saved_box, units
+    from .staff_review import LABELS
     rules = {"cross_channel_repeat": "Cross-channel repeat", "same_channel_repeat": "Same-channel repeat",
              "blocked_domain": "Blocked domain"}
     states = {"open": "Open", "withdrawn": "Withdrawn", "expired": "Expired", "paused": "Paused",
               "needs_revalidation": "Needs recheck", "policy_changed": "Policy changed"}
-    lines = ["CODE RULE", "-" * PANEL_WIDTH,
-             _field("Rule", rules.get(incident["rule_id"], "Unknown rule")),
+    assessment = incident.get("staff_assessment", {})
+    staff = (LABELS[assessment["label"]] if assessment.get("applies_to_snapshot") else
+             "Review changed evidence" if assessment.get("label") else
+             "Review unavailable" if assessment.get("state") == "unavailable" else "Not reviewed")
+    lines = ["SUMMARY", "-" * PANEL_WIDTH, _field("Flagged", rules.get(incident["rule_id"], "Unknown rule")),
+             _field("Evidence", f"{len(incident['evidence'])} messages"),
              _field("State", states.get(incident["status"], "Unknown state")),
-             _field("Revision", incident["revision"]),
-             _field("Evidence", f"{len(incident['evidence'])} messages"), "",
-             format_classification(incident["classification"]), "",
-             format_moderator_review(incident.get("moderator_review", {"state": "not_reviewed"}))]
-    from .evidence_view import format_evidence, units
-    body = ("**Moderation review**\n```\n" + "\n".join(lines) + "\n```\n"
-            f"**Incident ID**\n`{incident['id']}`\n"
-            f"**Author ID** `{incident['author_id']}`\n")
-    review = incident.get("moderator_review", {})
-    if review.get("reviewer_id"):
-        body += f"**Reviewer ID** `{review['reviewer_id']}`\n"
-    footer = "*Saved snapshot. Enforcement disabled.*\n*Saved result only; no new AI call.*"
-    preview = format_evidence(incident.get("evidence_view", {}), 1900 - units(body + footer))
-    return body + preview + footer
+             _field("Revision", incident["revision"])]
+    if incident.get("latest_revision", incident["revision"]) != incident["revision"]:
+        lines.append(_field("Latest rev", incident["latest_revision"]))
+    lines += [_field("Staff", staff), _field("Review", "Complete" if assessment.get("complete") else "Pending")]
+    if assessment.get("label"):
+        lines += [_field("Staff rev", assessment["revision"]), _field("Staff data", assessment["state"].upper())]
+    classification = incident["classification"]
+    if details:
+        lines += ["", format_classification(classification)]
+        legacy = incident.get("moderator_review", {})
+        if legacy.get("label"):
+            from .moderator_review import LABELS as OLD_LABELS
+            lines += ["", "LEGACY CONTENT LABEL", "-" * PANEL_WIDTH,
+                      _field("Label", OLD_LABELS[legacy["label"]]), _field("Review rev", legacy["revision"])]
+    else:
+        lines += ["", "JEV SUGGESTION", "-" * PANEL_WIDTH]
+        if classification["outcome"] == "ok":
+            lines += [_field("Label", classification["choice"].replace("_", " ").capitalize()),
+                      _field("Score", f"{classification['confidence']:.2f} (model score)")]
+        else:
+            lines.append(_field("Result", "No saved evaluation" if classification["outcome"] == "not_evaluated" else
+                                "Saved evaluation unavailable" if classification["outcome"] == "unavailable" else
+                                classification["outcome"].replace("_", " ").capitalize()))
+        if "revision" in classification:
+            lines += [_field("Evaluated", f"Revision {classification['revision']}, {_age(classification['age_seconds'])}"),
+                      _field("Evidence", classification["evidence_state"].upper())]
+    body = "**Moderation review**\n```\n" + "\n".join(lines) + "\n```\n"
+    footer = ""
+    if assessment.get("reviewer_id"):
+        at = datetime.fromtimestamp(assessment["reviewed_at"], timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        prefix = "Reviewed by" if assessment.get("applies_to_snapshot") else "Previous review by"
+        footer += f"{prefix} <@{assessment['reviewer_id']}> | {at}\n"
+    if classification.get("evidence_state") == "historical":
+        footer += "*JEV is historical: " + REASONS[classification["reason"]] + ".*\n"
+    footer += ("**Staff assessment - does this need attention?**\n"
+               "Needs attention: possible issue. Looks okay: acceptable. Unsure: more context.\n"
+               f"*Records your assessment of revision {incident['revision']}; enforcement disabled; no new AI call.*\n"
+               "Pending reviews: `!mod pending`")
+    remaining = 1900 - units(body + footer)
+    evidence = format_saved_box(incident.get("evidence_view", {}), incident, remaining)
+    result = body + evidence + footer
+    if units(result) > 1900 and details:
+        # Preserve evidence, links and button context if unusually long technical fields do not fit.
+        return format_incident(incident)
+    if units(result) > 1900:
+        raise ValueError("Incident display exceeds its fixed limit")
+    return result
