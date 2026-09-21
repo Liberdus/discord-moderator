@@ -43,6 +43,53 @@ class SetupTests(unittest.TestCase):
         configure(self.profile, "off")
         self.assertFalse(Config.from_file(self.policy).ai_enabled)
 
+    def test_screening_setup_preserves_scope_and_uses_separate_fixed_trial_allowance(self):
+        result = configure(self.profile, "screen")
+        updated = Config.from_file(self.policy)
+        self.assertEqual(updated.classifier.mode, "report_only")
+        self.assertEqual(updated.classifier.daily_budget_microusd, 1000000)
+        self.assertEqual(updated.classifier.total_budget_microusd, 4000000)
+        self.assertEqual(updated.classifier.min_interval_seconds, 1)
+        self.assertEqual(updated.monitored_channel_ids, self.config.monitored_channel_ids)
+        self.assertEqual(updated.command_channel_ids, self.config.command_channel_ids)
+        self.assertEqual(updated.rules, self.config.rules)
+        self.assertFalse(updated.actions_enabled)
+        self.assertFalse(result["provider_called"])
+        self.assertFalse((self.profile / "state/moderation.sqlite3").exists())
+        self.assertFalse((self.profile / ".env").exists())
+
+    def test_owner_screening_activation_requires_exact_scope_new_code_and_released_lock(self):
+        import fcntl, os
+        from liberdus_moderator.configure_jev import configure_screening
+        from liberdus_moderator.config import RuleSettings
+        policy = replace(self.config, guild_id="746426387606274199", bot_user_id="1548537340870533150",
+            monitored_channel_ids=("1551249559819264030", "1551249642216357908", "1551249693399584818"),
+            command_channel_ids=("1551252553331642558",), operator_user_ids=("977263877391794217",),
+            rules=RuleSettings())
+        self.policy.write_text(policy_text(policy))
+        (self.profile.parent.parent / "config.yaml").write_text("platforms:\n  discord:\n    enabled: false\n")
+        manifest = self.profile / "plugins/liberdus-moderator/plugin.yaml"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("name: liberdus-moderator\nversion: 0.4.0\n")
+        (self.profile / "state").mkdir()
+        lock = self.profile / "state/moderation.lock"
+        lock.touch()
+        fd = os.open(lock,os.O_RDWR)
+        try:
+            fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError): configure_screening(self.profile)
+        finally:
+            os.close(fd)
+        self.policy.write_text(policy_text(replace(policy,monitored_channel_ids=(*policy.monitored_channel_ids,"999"))))
+        with self.assertRaisesRegex(ValueError,"approved private"): configure_screening(self.profile)
+        self.policy.write_text(policy_text(policy))
+        manifest.write_text("name: liberdus-moderator\nversion: 0.3.5\n")
+        with self.assertRaisesRegex(ValueError,"0.4.0"): configure_screening(self.profile)
+        manifest.write_text("name: liberdus-moderator\nversion: 0.4.0\n")
+        configure_screening(self.profile)
+        self.assertEqual(Config.from_file(self.policy).classifier.mode,"report_only")
+        self.assertFalse((self.profile / "state/moderation.sqlite3").exists())
+
     def test_active_profile_and_symlink_refused(self):
         raw = yaml.safe_load((self.profile / "config.yaml").read_text())
         raw["platforms"]["liberdus_moderator"]["enabled"] = True

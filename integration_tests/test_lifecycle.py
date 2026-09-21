@@ -99,6 +99,28 @@ database_path = "{self.profile}/state/moderation.sqlite3"
             self.assertIsNone(adapter.classifier)
             self.assertIsNone(adapter.store)
 
+    async def test_screening_worker_lifecycle_and_disk_policy_stop_gate(self):
+        from dataclasses import replace
+        from liberdus_moderator.config import Config, ClassifierSettings
+        from liberdus_moderator.configure_jev import policy_text
+        path = self.profile / "moderation.toml"
+        policy = replace(Config.from_file(path), schema_version=2, ai_enabled=True,
+            classifier=ClassifierSettings(mode="report_only", max_daily_calls=10, max_total_calls=10,
+                daily_budget_microusd=50000, total_budget_microusd=50000))
+        path.write_text(policy_text(policy))
+        adapter = self.adapter()
+        with patch("liberdus_moderator.hermes_adapter.verify_runtime"), patch("liberdus_moderator.hermes_adapter.get_scoped_secret", return_value="fake-token"), patch("liberdus_moderator.hermes_adapter.PilotClient", side_effect=self.fake_client):
+            self.assertTrue(await adapter.connect())
+            self.assertIsNotNone(adapter.classifier)
+            self.assertFalse(adapter.classifier.task.done())
+            self.assertTrue(adapter.classifier_active())
+            disabled = replace(policy, ai_enabled=False, classifier=replace(policy.classifier, mode="off"))
+            path.write_text(policy_text(disabled))
+            self.assertFalse(adapter.classifier_active())
+            await adapter.disconnect()
+            self.assertIsNone(adapter.classifier)
+            self.assertIsNone(adapter.store)
+
     async def test_bad_token_identity_closes_before_receiving(self):
         adapter = self.adapter()
         client = self.fake_client(adapter)

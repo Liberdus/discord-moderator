@@ -95,8 +95,19 @@ def configure(profile, operation, *, key=None, limits=None):
                 record["result"] = json.loads(record.pop("result_json") or "null")
             settings = {row["key"]: json.loads(row["value"]) for row in connection.execute(
                 "SELECT key,value FROM settings WHERE key IN ('classifier_total_calls','classifier_total_reserved_microusd','classifier_state')")}
+            screen_exists = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='screening_attempts_v1'").fetchone()
+            screen_records = [dict(row) for row in connection.execute(
+                "SELECT message_id,version,started_at,finished_at,outcome,latency_ms,incident_id,result_json "
+                "FROM screening_attempts_v1 ORDER BY started_at DESC LIMIT 20")] if screen_exists else []
+            for record in screen_records:
+                record["result"] = json.loads(record.pop("result_json") or "null")
+            screen_settings = {row["key"]: json.loads(row["value"]) for row in connection.execute(
+                "SELECT key,value FROM settings WHERE key IN ('screening_total_calls','screening_daily_calls',"
+                "'screening_total_reserved_microusd','screening_daily_reserved_microusd','screening_state',"
+                "'screening_checked','screening_flagged','screening_unchecked')")}
             return {"mode": config.classifier.mode, "records": records, "accounting": settings,
-                    "note": "Historical shadow results; compare evidence revisions, not moderation verdicts."}
+                    "screening_records": screen_records, "screening_accounting": screen_settings,
+                    "note": "Saved results only; scores are not verdicts, reservations and estimates are not invoices."}
         finally:
             connection.close()
     if operation == "key":
@@ -117,7 +128,13 @@ def configure(profile, operation, *, key=None, limits=None):
         finally:
             Path(staged).unlink(missing_ok=True)
     else:
-        if operation == "shadow":
+        if operation == "screen":
+            # Fixed approved trial allowance; old shadow/batch counters remain untouched.
+            settings = ClassifierSettings(mode="report_only", max_daily_calls=10000, max_total_calls=100000,
+                daily_budget_microusd=1000000, total_budget_microusd=4000000,
+                queue_capacity=100, timeout_seconds=3, min_interval_seconds=1)
+            updated = replace(config, schema_version=2, ai_enabled=True, classifier=settings)
+        elif operation == "shadow":
             settings = ClassifierSettings(mode="shadow", **(limits or {}))
             updated = replace(config, schema_version=2, ai_enabled=True, classifier=settings)
         elif operation == "off":
@@ -132,9 +149,43 @@ def configure(profile, operation, *, key=None, limits=None):
             "platform_enabled": False, "gateway_restarted": False, "provider_called": False}
 
 
+
+def configure_screening(profile):
+    """Activate only the reviewed Liberdus test scope, with the new code stopped."""
+    import fcntl
+    import yaml
+    from . import __version__
+    manifest_path = profile / "plugins/liberdus-moderator/plugin.yaml"
+    lock_path = profile / "state/moderation.lock"
+    default_path = profile.parent.parent / "config.yaml"
+    for path in (manifest_path, lock_path, default_path):
+        regular_owned(path)
+    manifest = yaml.safe_load(manifest_path.read_text())
+    if (manifest.get("name") != "liberdus-moderator" or manifest.get("version") != __version__
+            or __version__ != "0.4.0"):
+        raise ValueError("Install the reviewed 0.4.0 update first")
+    default = yaml.safe_load(default_path.read_text())
+    if default.get("platforms", {}).get("discord", {}).get("enabled") is not False:
+        raise ValueError("Default stock Discord must remain disabled")
+    policy = Config.from_file(profile / "moderation.toml")
+    if (policy.guild_id != "746426387606274199" or policy.bot_user_id != "1548537340870533150"
+            or set(policy.monitored_channel_ids) != {"1551249559819264030", "1551249642216357908", "1551249693399584818"}
+            or policy.command_channel_ids != ("1551252553331642558",)
+            or policy.operator_user_ids != ("977263877391794217",) or policy.operator_role_ids
+            or policy.logs_enabled or policy.log_channel_id
+            or Path(policy.storage.database_path) != profile / "state/moderation.sqlite3"):
+        raise ValueError("Expected the approved private Liberdus test scope")
+    lock = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return configure(profile, "screen")
+    finally:
+        os.close(lock)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("key", "shadow", "off", "results"))
+    parser.add_argument("operation", choices=("key", "shadow", "screen", "off", "results"))
     parser.add_argument("--daily-calls", type=int, default=100)
     parser.add_argument("--total-calls", type=int, default=1000)
     parser.add_argument("--daily-microusd", type=int, default=50000, help="50000 = $0.05")
@@ -153,9 +204,12 @@ def main():
             if not sys.stdin.isatty():
                 raise ValueError("Run key setup interactively for a hidden prompt")
             key = getpass.getpass("TypeSafe API key (hidden): ")
-        result = configure(home / "profiles/liberdus-mod", args.operation, key=key, limits={
-            "max_daily_calls": args.daily_calls, "max_total_calls": args.total_calls,
-            "daily_budget_microusd": args.daily_microusd, "total_budget_microusd": args.total_microusd})
+        if args.operation == "screen":
+            result = configure_screening(home / "profiles/liberdus-mod")
+        else:
+            result = configure(home / "profiles/liberdus-mod", args.operation, key=key, limits={
+                "max_daily_calls": args.daily_calls, "max_total_calls": args.total_calls,
+                "daily_budget_microusd": args.daily_microusd, "total_budget_microusd": args.total_microusd})
         print(json.dumps(result, indent=2))
         return 0
     except Exception:

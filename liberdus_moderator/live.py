@@ -100,13 +100,19 @@ class LiveSession:
         if event.command in ("status", "pause", "resume"):
             status = self.status(connected)
             gap = status["last_coverage_gap"] or {"reason": "none"}
+            screening = (f"\nScreened: {status['screening_checked']} | Flagged: {status['screening_flagged']}"
+                         f"\nNot checked: {status['screening_unchecked']} | Screening attempts: {status['screening_attempts']}"
+                         f"\nTrial used/reserved: ${status['screening_reserved_microusd'] / 1000000:.6f}"
+                         f"\nTrial cap: ${self.config.classifier.daily_budget_microusd / 1000000:g}/day | ${self.config.classifier.total_budget_microusd / 1000000:g} total"
+                         if status['classifier_mode'] == 'report_only' else "")
+            coverage = "code + JEV (best effort)" if status['classifier_mode'] == 'report_only' else "code only"
             return (f"Liberdus moderation: {'paused' if status['paused'] else status['mode']}\n"
-                    f"Connected: {status['live_discord_connected']} | Coverage: code only\n"
+                    f"Connected: {status['live_discord_connected']} | Coverage: {coverage}\n"
                     f"Messages: {status['message_count']} | Incidents: {status['incident_count']}\n"
                     f"Pending reports: {status['pending_reports']} | Uncertain: {status['uncertain_reports']}\n"
                     f"Coverage resets: {status['coverage_gaps']} | Last: {gap['reason']}\n"
                     f"JEV: {status['classifier_mode']} / {status['classifier_state']}\n"
-                    f"AI attempts: {status['ai_attempts']} | Enforcement: disabled")
+                    f"AI attempts: {status['ai_attempts']} | Enforcement: disabled" + screening)
         if event.command in ("incident", "explain"):
             from .classification_view import format_incident
             # Saved text is separately validated and escaped; metadata keeps the narrow panel.

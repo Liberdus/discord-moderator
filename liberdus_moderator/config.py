@@ -128,8 +128,8 @@ class ClassifierSettings:
     def __post_init__(self):
         if self.provider != "jev" or self.model != "jev-1.13.0":
             raise ValueError("Only the reviewed JEV provider and pinned jev-1.13.0 model are supported")
-        if self.mode not in ("off", "shadow"):
-            raise ValueError("classifier.mode must be off or shadow; report annotation is not implemented")
+        if self.mode not in ("off", "shadow", "report_only"):
+            raise ValueError("classifier.mode must be off, shadow or report_only")
         bounds = {
             "max_daily_calls": (0, 10000), "max_total_calls": (0, 100000),
             "daily_budget_microusd": (0, 10000000), "total_budget_microusd": (0, 100000000),
@@ -140,9 +140,9 @@ class ClassifierSettings:
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
                 raise ValueError(f"classifier.{name} must be an integer between {low} and {high}")
-        if self.mode == "shadow" and any(getattr(self, name) <= 0 for name in (
+        if self.mode != "off" and any(getattr(self, name) <= 0 for name in (
                 "max_daily_calls", "max_total_calls", "daily_budget_microusd", "total_budget_microusd")):
-            raise ValueError("Shadow classification requires explicit positive call and spending limits")
+            raise ValueError("JEV requires explicit positive call and spending limits")
 
 
 @dataclass(frozen=True)
@@ -193,8 +193,8 @@ class Config:
             raise ValueError("Enforcement is not implemented")
         if self.schema_version == 1 and (self.ai_enabled or self.classifier != ClassifierSettings()):
             raise ValueError("Schema 1 remains code-only; migrate explicitly to schema 2 for JEV")
-        if self.ai_enabled != (self.classifier.mode == "shadow"):
-            raise ValueError("ai_enabled must be true exactly when classifier.mode is shadow")
+        if self.ai_enabled != (self.classifier.mode != "off"):
+            raise ValueError("ai_enabled must be true exactly when classifier.mode is not off")
         if self.ai_enabled and self.mode != "report_only":
             raise ValueError("Shadow classification requires report_only moderation")
         if self.logs_enabled and self.log_channel_id is None:

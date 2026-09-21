@@ -34,7 +34,7 @@ class UpdateTests(unittest.TestCase):
         shutil.copytree(ROOT / "liberdus_moderator", self.target / "liberdus_moderator",
                         ignore=shutil.ignore_patterns("__pycache__"))
         self.manifest = self.target / "plugin.yaml"
-        self.manifest.write_text(self.manifest.read_text().replace("0.3.5", "0.3.4"))
+        self.manifest.write_text(self.manifest.read_text().replace("0.4.0", "0.3.4"))
         (self.target / "previous-version-marker").write_text("keep in backup")
         (self.home / "hermes-agent").symlink_to(SOURCE)
         self.config = self.profile / "config.yaml"
@@ -68,7 +68,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(result["isolated_selftest"], "9/9 passed")
         self.assertFalse(result["platform_enabled"])
         self.assertFalse(result["gateway_restarted"])
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.3.5")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.4.0")
         self.assertEqual((Path(result["plugin_backup"]) / "previous-version-marker").read_text(), "keep in backup")
         self.assertEqual(self.preserved(), before)
         with self.assertRaisesRegex(ValueError, "requires an existing version"):
@@ -88,11 +88,15 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse(result["database_changed"])
         self.assertFalse(result["policy_changed"])
         self.assertFalse(result["token_read"])
-        self.assertEqual(result["version"], "0.3.5")
+        self.assertEqual(result["version"], "0.4.0")
+
+    def test_current_035_pilot_can_upgrade(self):
+        self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.3.5"))
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.4.0")
 
     def test_original_030_pilot_can_also_upgrade(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.3.0"))
-        self.assertEqual(update(self.bundle, self.home)["version"], "0.3.5")
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.4.0")
 
     def test_enabled_or_still_running_pilot_is_refused(self):
         original = self.config.read_text()

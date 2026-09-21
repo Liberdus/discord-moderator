@@ -1,6 +1,6 @@
 name: liberdus-moderator
 label: Liberdus Moderation
 kind: platform
-version: 0.3.5
-description: Explicitly enabled report-only Discord moderation with optional incident-only JEV shadow evaluation.
+version: 0.4.0
+description: Explicitly enabled report-only Discord moderation with optional JEV shadow classification or single-message review reports.
 author: Liberdus

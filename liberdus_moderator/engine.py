@@ -43,13 +43,18 @@ class Engine:
             "mode": self.config.mode,
             "paused": self.store.get_setting("paused", False),
             "logs_enabled": self.store.get_setting("logs_enabled", False),
-            "coverage": "code_only",
+            "coverage": "code_and_jev" if self.config.classifier.mode == "report_only" else "code_only",
             "live_discord_connected": False,
             "ai_enabled": self.config.ai_enabled, "actions_enabled": False,
             "classifier_mode": self.config.classifier.mode,
-            "classifier_state": self.store.get_setting("classifier_state", "not_started") if self.config.ai_enabled else "off",
-            "ai_attempts": self.store.get_setting("classifier_total_calls", 0),
-            "ai_reserved_microusd": self.store.get_setting("classifier_total_reserved_microusd", 0),
+            "classifier_state": self.store.get_setting("screening_state" if self.config.classifier.mode == "report_only" else "classifier_state", "not_started") if self.config.ai_enabled else "off",
+            "ai_attempts": self.store.get_setting("classifier_total_calls", 0) + self.store.get_setting("screening_total_calls", 0),
+            "screening_attempts": self.store.get_setting("screening_total_calls", 0),
+            "screening_checked": self.store.get_setting("screening_checked", 0),
+            "screening_flagged": self.store.get_setting("screening_flagged", 0),
+            "screening_unchecked": self.store.get_setting("screening_unchecked", 0),
+            "screening_reserved_microusd": self.store.get_setting("screening_total_reserved_microusd", 0),
+            "ai_reserved_microusd": self.store.get_setting("classifier_total_reserved_microusd", 0) + self.store.get_setting("screening_total_reserved_microusd", 0),
             "message_count": self.store.db.execute("SELECT count(*) FROM messages").fetchone()[0],
             "incident_count": self.store.db.execute("SELECT count(*) FROM incidents").fetchone()[0],
             "pending_reports": self.store.db.execute("SELECT count(*) FROM reports WHERE status='pending'").fetchone()[0],
@@ -129,7 +134,13 @@ class Engine:
                 for incident in self.store.db.execute(
                     "SELECT * FROM incidents WHERE author_id=? AND status='open'", (event.author_id,)
                 ).fetchall():
-                    if incident["group_key"] not in keys:
+                    if incident["rule_id"] == "jev_message":
+                        # A later unrelated message must not withdraw an AI incident.
+                        # Edits to its own evidence invalidate it before another request.
+                        if any(item["message_id"] == event.message_id and item["version"] != event.version
+                               for item in json.loads(incident["evidence_json"])):
+                            self._withdraw(incident, now, "withdrawn")
+                    elif incident["group_key"] not in keys:
                         self._withdraw(incident, now, "withdrawn")
                 incident_ids, new_ids = [], []
                 for match in matches:

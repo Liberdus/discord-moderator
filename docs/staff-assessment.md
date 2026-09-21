@@ -1,6 +1,6 @@
 # Staff assessments and pending reviews
 
-Version **0.3.5**, September 21, 2026. Source and update bundles are prepared; live installation and verification remain pending. The owner supplied a working 0.3.4 incident display before choosing this follow-up.
+Version **0.3.5**, September 21, 2026. Owner-supplied output confirms the display, named reviewer, Needs attention remaining pending, and Looks okay completing a review and reducing the queue from 8 to 7. No repeat installation is needed. The later [0.4.0 screening update](message-screening.md) retains this staff workflow.
 
 ## What staff see and do
 
@@ -39,7 +39,7 @@ The old Promotion / Not promotion / Unsure records remain untouched in `moderato
 
 New assessments use `staff_assessments_v1`, created only on the first authorized write. The append-only history is bounded to 32 entries per incident and follows incident deletion through a foreign key. Existing seven-day incident retention and message-binding/receipt bounds still apply. Queue listings are read-only and exclude records beyond retention without deleting them. Unsupported/corrupt assessment data cannot complete a review. Busy or expired clicks are refused; duplicate interaction IDs cannot repeat a saved mutation while receipts are retained. A lost confirmation can be checked with an incident lookup.
 
-## Install and verify on db2
+## Historical 0.3.5 install and verification procedure
 
 From the existing **hermes** terminal:
 
@@ -63,6 +63,6 @@ For rollback, disable the custom platform, finish the gateway restart and restor
 
 ## Validation and later use of feedback
 
-182 core/setup tests pass on Python 3.11.16 and 3.12.3; 50 integration tests use the pinned c1488 Hermes source and discord.py 2.7.1 with external network blocked/mocked. Checks cover staff queue transitions, authorization, legacy-label separation, pagination, retention, unchanged-evidence completion after restart, changed evidence/policy, stale clicks, report editing and failures, duplicate interactions, non-notifying mentions, display bounds and updates preserving existing configuration. This does not claim a completed live deployment or live button test.
+182 core/setup tests pass on Python 3.11.16 and 3.12.3; 50 integration tests use the pinned c1488 Hermes source and discord.py 2.7.1 with external network blocked/mocked. Checks cover staff queue transitions, authorization, legacy-label separation, pagination, retention, unchanged-evidence completion after restart, changed evidence/policy, stale clicks, report editing and failures, duplicate interactions, non-notifying mentions, display bounds and updates preserving existing configuration. The owner subsequently supplied live evidence for the review/display/queue path described above; unobserved live cases remain unverified.
 
 Completed assessments provide an audit trail for later review of unnecessary alerts and useful cases. They are not automatic ground-truth labels for JEV's promotion category. Future rule/rubric changes should be chosen and tested explicitly. No automatic training, threshold tuning, enforcement or new paid batch is part of this release.

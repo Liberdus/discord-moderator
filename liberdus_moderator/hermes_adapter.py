@@ -164,6 +164,11 @@ class ModerationAdapter(BasePlatformAdapter):
                 from .classifier import ShadowClassifier
                 self.classifier = ShadowClassifier(self.live.engine, self.evaluate_jev, active=self.classifier_active)
                 self.classifier.start()
+            elif self.policy.classifier.mode == "report_only":
+                from .screening import MessageScreener
+                self.classifier = MessageScreener(self.live.engine, self.evaluate_jev, active=self.classifier_active,
+                                                 on_result=lambda job: self.enqueue("screen_result", job))
+                self.classifier.start()
             self.worker = asyncio.create_task(self.run_worker())
             self.receiver = asyncio.create_task(self.run_receiver())
             waiter = asyncio.create_task(self.ready_event.wait())
@@ -187,7 +192,8 @@ class ModerationAdapter(BasePlatformAdapter):
     def classifier_active(self):
         # A disk flag/policy change stops new requests and invalidates late results
         # even before a gateway restart. Never fetch another profile's key here.
-        if not self.online or self.closing or not self.queue.empty() or self.processing_evidence:
+        if (not self.online or self.closing or (self.policy.classifier.mode == "shadow"
+                and (not self.queue.empty() or self.processing_evidence))):
             return False
         try:
             path = get_hermes_home() / "moderation.toml"
@@ -207,7 +213,11 @@ class ModerationAdapter(BasePlatformAdapter):
     def process_evidence(self, evidence):
         result = self.live.engine.process(evidence)
         if self.classifier is not None:
-            self.classifier_candidates.update(result["incident_ids"])
+            if self.policy.classifier.mode == "report_only":
+                if result["disposition"] in {"no_match", "review"} and evidence.content.strip():
+                    self.classifier_candidates.add(evidence.message_id)
+            else:
+                self.classifier_candidates.update(result["incident_ids"])
         return result
 
     async def run_receiver(self):
@@ -265,6 +275,8 @@ class ModerationAdapter(BasePlatformAdapter):
             self.queue.task_done()
         if self.live is not None:
             self.live.gap(reason)
+        if self.classifier is not None and self.policy.classifier.mode == "report_only":
+            self.classifier.invalidate()
 
     def lost_connection(self):
         if self.closing or not self.online:
@@ -447,6 +459,9 @@ class ModerationAdapter(BasePlatformAdapter):
                         continue
                     if kind == "message":
                         self.process_evidence(value)
+                    elif kind == "screen_result":
+                        if self.classifier is not None and self.policy.classifier.mode == "report_only":
+                            self.classifier.apply(value)
                     elif kind == "edit":
                         self.processing_evidence = True
                         try:

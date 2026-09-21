@@ -36,15 +36,15 @@ def _number(value):
     return type(value) in (int, float) and math.isfinite(value) and 0 < value <= 253402300799
 
 
-def _reason(engine, incident, attempt, now):
+def _reason(engine, incident, attempt, now, *, expected_rubric=RUBRIC_HASH, mode="shadow"):
     config, store = engine.config, engine.store
     if attempt["policy_hash"] != config.policy_hash or incident["policy_hash"] != config.policy_hash:
         return "policy_changed"
-    if attempt["model"] != MODEL or attempt["rubric_hash"] != RUBRIC_HASH:
+    if attempt["model"] != MODEL or attempt["rubric_hash"] != expected_rubric:
         return "classifier_changed"
     if (attempt["finished_at"] or attempt["started_at"]) > now:
         return "clock_changed"
-    if not config.ai_enabled or config.classifier.mode != "shadow" or config.mode != "report_only":
+    if not config.ai_enabled or config.classifier.mode != mode or config.mode != "report_only":
         return "disabled"
     if store.get_setting("paused", False):
         return "paused"
@@ -76,6 +76,9 @@ def saved_classification(engine, incident):
     be displayed as history after an edit, coverage reset, policy change or disable.
     Only validated fixed fields reach the command response, never provider text.
     """
+    if incident["rule_id"] == "jev_message":
+        from .screening import saved_screening
+        return saved_screening(engine, incident)
     store = engine.store
     try:
         if not store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classifier_attempts'").fetchone():
@@ -192,7 +195,7 @@ def format_incident(incident, *, details=False):
     from .evidence_view import format_saved_box, units
     from .staff_review import LABELS
     rules = {"cross_channel_repeat": "Cross-channel repeat", "same_channel_repeat": "Same-channel repeat",
-             "blocked_domain": "Blocked domain"}
+             "blocked_domain": "Blocked domain", "jev_message": "JEV screening"}
     states = {"open": "Open", "withdrawn": "Withdrawn", "expired": "Expired", "paused": "Paused",
               "needs_revalidation": "Needs recheck", "policy_changed": "Policy changed"}
     assessment = incident.get("staff_assessment", {})
@@ -221,6 +224,8 @@ def format_incident(incident, *, details=False):
         if classification["outcome"] == "ok":
             lines += [_field("Label", classification["choice"].replace("_", " ").capitalize()),
                       _field("Score", f"{classification['confidence']:.2f} (model score)")]
+            if classification.get("purpose"):
+                lines.append(_field("Purpose", classification["purpose"].replace("_", " ")))
         else:
             lines.append(_field("Result", "No saved evaluation" if classification["outcome"] == "not_evaluated" else
                                 "Saved evaluation unavailable" if classification["outcome"] == "unavailable" else
@@ -236,6 +241,8 @@ def format_incident(incident, *, details=False):
         footer += f"{prefix} <@{assessment['reviewer_id']}> | {at}\n"
     if classification.get("evidence_state") == "historical":
         footer += "*JEV is historical: " + REASONS[classification["reason"]] + ".*\n"
+    if incident["rule_id"] == "jev_message":
+        footer += "*Possible concern only; link destinations not checked.*\n"
     footer += ("**Staff assessment - does this need attention?**\n"
                "Needs attention: possible issue. Looks okay: acceptable. Unsure: more context.\n"
                f"*Records your assessment of revision {incident['revision']}; enforcement disabled; no new AI call.*\n"

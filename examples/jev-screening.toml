@@ -1,0 +1,52 @@
+# Synthetic example only; never activate this scope on Discord.
+policy_version = "pilot-1"
+mode = "report_only"
+logs_enabled = false
+schema_version = 2
+ai_enabled = true
+actions_enabled = false
+
+[scope]
+guild_id = "1"
+bot_user_id = "99"
+monitored_channel_ids = ["101", "102", "103"]
+command_channel_ids = ["201"]
+operator_user_ids = ["42"]
+operator_role_ids = ["301"]
+log_channel_id = "202"
+
+[storage]
+database_path = "state/moderation.sqlite3"
+retention_seconds = 604800
+max_messages = 50000
+max_incidents = 5000
+max_pending_reports = 500
+max_evidence_versions = 100
+
+[rules]
+repeat_window_seconds = 120
+repeat_min_channels = 3
+repeat_min_chars = 20
+same_channel_window_seconds = 30
+same_channel_min_messages = 4
+notification_cooldown_seconds = 300
+blocked_domains = ["scam.invalid"]
+
+[classifier]
+provider = "jev"
+mode = "report_only"
+model = "jev-1.13.0"
+max_daily_calls = 10000
+max_total_calls = 100000
+daily_budget_microusd = 1000000
+total_budget_microusd = 4000000
+max_request_bytes = 12000
+max_evidence_messages = 32
+queue_capacity = 100
+timeout_seconds = 3
+min_interval_seconds = 1
+
+[[rules.approved_crossposts]]
+author_ids = ["11"]
+channel_ids = ["101", "102", "103"]
+content = "Weekly community office hours begin Friday at noon."
