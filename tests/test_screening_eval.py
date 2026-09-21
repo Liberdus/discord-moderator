@@ -19,7 +19,7 @@ from liberdus_moderator.engine import Engine
 from liberdus_moderator.jev import ProviderError
 from liberdus_moderator.screening import CONCERN, QUESTIONS, SCREENING_HASH, MessageScreener, validate_screening
 from liberdus_moderator.screening_cases import CASES, SUITE
-from liberdus_moderator.screening_eval import (decision, format_report, main, report, requests, run_evaluation)
+from liberdus_moderator.screening_eval import (decision, format_report, main, report, requests, run_evaluation, retry_run_name)
 from liberdus_moderator.screening_eval_ledger import ScreeningEvalLedger, TABLE
 from liberdus_moderator.storage import Store
 from scripts.build_screening_eval import build
@@ -64,7 +64,7 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
 
     def live_state(self):
         names = [row[0] for row in self.live.db.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                 if row[0] not in ('settings', TABLE)]
+                 if row[0] != 'settings' and not row[0].startswith('screening_eval_')]
         data = {name: [tuple(row) for row in self.live.db.execute('SELECT * FROM ' + name)] for name in names}
         data['settings'] = [tuple(row) for row in self.live.db.execute('SELECT * FROM settings ORDER BY key')
                             if not row['key'].startswith(('screening_daily_', 'screening_total_'))
@@ -221,3 +221,147 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preview['rubric_hash'], SCREENING_HASH)
         with self.assertRaises(ValueError):
             build(root, output)
+
+    def seed_legacy_failure(self, prepared=None, source_run=SUITE):
+        case, _, digest = (prepared or self.prepared)[0]
+        self.ledger.initialize()
+        self.assertEqual(self.ledger.reserve(source_run, case, digest, self.config, self.now), 'reserved')
+        self.ledger.finish(source_run, digest, 'provider_or_response_error', self.now + .1, 100)
+        return case, digest
+
+    async def test_focused_retry_preserves_baseline_and_cannot_repeat_charge(self):
+        picked = [self.prepared[29]]
+        case, digest = self.seed_legacy_failure(picked)
+        baseline = dict(self.ledger.row(SUITE, digest))
+        target = retry_run_name(SUITE, case)
+        self.provider.return_value = result('impersonation', 'other')
+        data = await self.run_cases(picked, run_id=target, source_run_id=SUITE)
+        self.provider.assert_awaited_once_with(picked[0][1])
+        self.assertEqual((len(data['records']), data['successful'], data['new_attempts']), (1, 1, 1))
+        self.assertEqual(data['retry']['source_run_id'], SUITE)
+        self.assertEqual(data['retry']['source_outcome'], 'provider_or_response_error')
+        self.assertEqual(dict(self.ledger.row(SUITE, digest)), baseline)
+        self.assertEqual(self.live.get_setting('screening_total_calls'), 2)
+        self.assertEqual(self.live.get_setting('screening_total_reserved_microusd'), RESERVED_MICROUSD + 21)
+        self.assertIn('Original result preserved.', format_report(data))
+        self.assertIn('STAFF REPORT', format_report(data))
+        self.assertIn('Got concern: impersonation', format_report(data))
+        again = await self.run_cases(picked, run_id=target, source_run_id=SUITE)
+        self.assertEqual(again['new_attempts'], 0)
+        self.provider.assert_awaited_once()
+        original = report(self.ledger, SUITE, picked)
+        self.assertEqual(original['successful'], 0)
+        self.assertIn('details were not recorded', original['records'][0]['diagnostic_message'])
+        self.assertLessEqual(max(map(len, format_report(data).splitlines())), 32)
+
+    async def test_retry_failure_has_diagnostic_but_no_automatic_second_attempt(self):
+        picked = [self.prepared[29]]
+        case, _ = self.seed_legacy_failure(picked)
+        target = retry_run_name(SUITE, case)
+        raw = result('impersonation', 'other')
+        raw['answers']['concern']['probabilities']['impersonation'] = .8
+        raw['secret_extra'] = 'SECRET TOKEN RESPONSE'
+        self.provider.return_value = raw
+        data = await self.run_cases(picked, run_id=target, source_run_id=SUITE)
+        self.assertEqual(data['records'][0]['outcome'], 'invalid_response')
+        self.assertEqual(data['records'][0]['diagnostic'], 'concern.probability_sum')
+        self.assertNotIn('SECRET', json.dumps(data))
+        self.assertIn('concern.probability_sum', format_report(data))
+        self.assertEqual(self.live.get_setting('screening_total_reserved_microusd'), 2 * RESERVED_MICROUSD)
+        self.assertEqual((await self.run_cases(picked, run_id=target, source_run_id=SUITE))['new_attempts'], 0)
+        self.provider.assert_awaited_once()
+
+    async def test_retry_rejects_missing_successful_source_and_multiple_cases(self):
+        case, _, _ = self.prepared[29]
+        target = retry_run_name(SUITE, case)
+        with self.assertRaises(ValueError):
+            await self.run_cases([self.prepared[29]], run_id=target, source_run_id=SUITE)
+        self.provider.assert_not_awaited()
+        self.provider.return_value = result('impersonation', 'other')
+        await self.run_cases([self.prepared[29]])
+        before = self.live.get_setting('screening_total_calls')
+        self.provider.reset_mock()
+        with self.assertRaises(ValueError):
+            await self.run_cases([self.prepared[29]], run_id=target, source_run_id=SUITE)
+        with self.assertRaises(ValueError):
+            await self.run_cases(self.prepared[:2], run_id=target, source_run_id=SUITE)
+        with self.assertRaises(ValueError):
+            await self.run_cases([self.prepared[29]], run_id=SUITE, source_run_id=SUITE)
+        self.provider.assert_not_awaited()
+        self.assertEqual(self.live.get_setting('screening_total_calls'), before)
+
+    async def test_bound_retry_cannot_accidentally_run_whole_suite(self):
+        picked = [self.prepared[29]]
+        case, digest = self.seed_legacy_failure(picked)
+        target = retry_run_name(SUITE, case)
+        self.ledger.bind_retry(SUITE, target, case, digest)
+        with self.assertRaisesRegex(ValueError, 'only the case'):
+            await self.run_cases(run_id=target)
+        self.provider.assert_not_awaited()
+        self.assertEqual(self.live.get_setting('screening_total_calls'), 1)
+
+    async def test_runner_network_and_validation_failures_have_separate_codes(self):
+        for run_id, value, outcome, code in (
+            ('connection', ConnectionError('SECRET URL AND TOKEN'), 'network_error', 'network.io'),
+            ('internal', RuntimeError('SECRET BODY'), 'internal_error', 'internal.request'),
+            ('timeout', TimeoutError('SECRET DETAIL'), 'timeout', 'request.timeout')):
+            with self.subTest(run=run_id):
+                self.provider.side_effect = value
+                data = await self.run_cases(self.prepared[:1], run_id=run_id)
+                self.assertEqual(data['records'][0]['outcome'], outcome)
+                self.assertEqual(data['records'][0]['diagnostic'], code)
+                self.assertNotIn('SECRET', json.dumps(data))
+
+    def test_retry_cli_one_call_success_exit_and_results_use_binding(self):
+        picked = [self.prepared[29]]
+        case, digest = self.seed_legacy_failure(picked)
+        target = retry_run_name(SUITE, case)
+        python = self.home / '.hermes/hermes-agent/venv/bin/python'
+        python.parent.mkdir(parents=True)
+        python.touch()
+        provider = AsyncMock(return_value=result('impersonation', 'other'))
+        with patch('sys.argv', ['evaluation', 'retry', case.name, '--json']), \
+                patch('pathlib.Path.home', return_value=self.home), \
+                patch('sys.prefix', str(python.parent.parent)), \
+                patch('liberdus_moderator.screening_eval.profile_key', return_value='SECRET KEY'), \
+                patch('liberdus_moderator.screening_eval.evaluate', provider), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(), 0)
+        data = json.loads(out.getvalue())
+        self.assertEqual((data['successful'], data['run_id']), (1, target))
+        self.assertEqual(len(data['records']), 1)
+        provider.assert_awaited_once()
+        with patch('sys.argv', ['evaluation', 'results', '--run-id', target, '--json']), \
+                patch('pathlib.Path.home', return_value=self.home), \
+                patch('liberdus_moderator.screening_eval.profile_key') as key, \
+                patch('liberdus_moderator.screening_eval.evaluate') as api, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(main(), 0)
+        key.assert_not_called()
+        api.assert_not_called()
+        self.assertEqual(len(json.loads(out.getvalue())['records']), 1)
+
+    def test_one_case_preview_is_profile_free_and_has_stable_retry_name(self):
+        case = CASES[29]
+        with patch('sys.argv', ['evaluation', 'preview', case.name]), \
+                patch('liberdus_moderator.screening_eval.load_policy') as policy, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(main(), 0)
+        preview = json.loads(out.getvalue())
+        self.assertEqual(preview['maximum_attempts'], 1)
+        self.assertEqual(preview['maximum_initial_reservation_microusd'], RESERVED_MICROUSD)
+        self.assertEqual(preview['run_id'], retry_run_name(SUITE, case))
+        self.assertEqual(preview['cases'][0]['name'], case.name)
+        self.assertFalse(preview['provider_called'])
+        policy.assert_not_called()
+        self.assertNotEqual(retry_run_name('other-source', case), preview['run_id'])
+
+    def test_retry_cli_rejects_bad_or_missing_case_before_profile_access(self):
+        for argv in (['evaluation', 'retry'], ['evaluation', 'retry', 'unknown'],
+                     ['evaluation', 'run', CASES[29].name], ['evaluation', 'results', CASES[29].name]):
+            with self.subTest(argv=argv), patch('sys.argv', argv), \
+                    patch('liberdus_moderator.screening_eval.load_policy') as policy, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                main()
+            self.assertEqual(error.exception.code, 2)
+            policy.assert_not_called()

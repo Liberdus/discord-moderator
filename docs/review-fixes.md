@@ -1,5 +1,7 @@
 # Review fixes — 0.5.4
 
+**Owner deployment confirmed — September 21, 2026:** the supplied helper output reports 0.5.4 installed, runtime import passed, isolated self-test 9/9 and both gateway restarts completed. Policy, database, credentials and flags were preserved. The [JEV screening baseline and focused retry](screening-evaluation.md) have separate results and commands.
+
 This release addresses the five findings in the [0.5.3 code review](reviews/2026-09-21-code-review.md). The review scenarios are being converted into automated regression tests requiring the corrected behavior. No live Discord messages or paid JEV requests are part of development validation.
 
 ## Corrected behavior

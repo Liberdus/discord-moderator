@@ -15,7 +15,9 @@ from liberdus_moderator.config import ClassifierSettings, Config, StorageSetting
 from liberdus_moderator.engine import Engine
 from liberdus_moderator.models import MessageEvent
 from liberdus_moderator.screening import CONCERN, SCREENING_HASH, MessageScreener, validate_screening
-from liberdus_moderator.screening_eval_ledger import ScreeningEvalLedger, TABLE, MAX_RECORDS
+from liberdus_moderator.screening_eval_ledger import (ScreeningEvalLedger, TABLE, MAX_RECORDS,
+                                                      DIAGNOSTICS_TABLE, RETRY_TABLE)
+from liberdus_moderator.screening_diagnostics import DIAGNOSTIC_CODES
 from liberdus_moderator.storage import Store
 
 BUDGET_KEYS = {'screening_' + name for name in ('budget_day', 'daily_calls', 'total_calls',
@@ -69,7 +71,7 @@ class ScreeningEvalLedgerTests(unittest.TestCase):
 
     def live_state(self):
         tables = [row[0] for row in self.live.db.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                  if row[0] not in ('settings', TABLE)]
+                  if row[0] not in ('settings', TABLE, DIAGNOSTICS_TABLE, RETRY_TABLE)]
         return {table: [tuple(row) for row in self.live.db.execute('SELECT * FROM ' + table)] for table in tables}
 
     def test_success_settles_once_and_preserves_all_live_state(self):
@@ -329,3 +331,171 @@ class ScreeningEvalLedgerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.ledger.reserve('first', fixture, self.request, self.config, self.now)
         self.assertEqual(list(self.live.db.iterdump()), before)
+
+    def failed_source(self, run='first', *, diagnostic=None):
+        self.assertEqual(self.reserve(run=run), 'reserved')
+        self.ledger.finish(run, self.request, 'timeout', self.now + 1, 1000, diagnostic=diagnostic)
+        return dict(self.ledger.row(run, self.request))
+
+    def test_fixed_diagnostics_are_atomic_private_and_never_overwritten(self):
+        self.assertIn('request.timeout', DIAGNOSTIC_CODES)
+        before, settings = self.live_state(), self.settings()
+        self.assertEqual(self.reserve(), 'reserved')
+        self.ledger.finish('first', self.request, 'timeout', self.now + 1, 1000, diagnostic='request.timeout')
+        self.assertEqual(self.ledger.diagnostic('first', self.request), 'request.timeout')
+        self.assertEqual(self.live.get_setting('screening_total_reserved_microusd'), RESERVED_MICROUSD)
+        row = dict(self.ledger.row('first', self.request))
+        budget = self.settings()
+        self.ledger.finish('first', self.request, 'internal_error', self.now + 2, 2000, diagnostic='request.interrupted')
+        self.assertEqual(self.ledger.diagnostic('first', self.request), 'request.timeout')
+        self.assertEqual(dict(self.ledger.row('first', self.request)), row)
+        self.assertEqual(self.settings(), budget)
+        self.assertEqual(self.live_state(), before)
+        self.assertTrue({key for key in settings.keys() | budget.keys() if settings.get(key) != budget.get(key)} <= BUDGET_KEYS)
+
+    def test_arbitrary_diagnostics_never_enter_database_or_refund_budget(self):
+        self.assertEqual(self.reserve(), 'reserved')
+        before = list(self.ledger.db.iterdump())
+        for diagnostic in ('Secret token abc123', 'request.timeout\nprovider body', 'x' * 100000, [], 42):
+            with self.subTest(kind=type(diagnostic).__name__), self.assertRaises(ValueError):
+                self.ledger.finish('first', self.request, 'invalid_response', self.now + 1, 100, diagnostic=diagnostic)
+            self.assertEqual(list(self.ledger.db.iterdump()), before)
+        self.ledger.finish('first', self.request, 'invalid_response', self.now + 1, 100)
+        self.assertIsNone(self.ledger.diagnostic('first', self.request))
+        self.assertEqual(self.live.get_setting('screening_total_reserved_microusd'), RESERVED_MICROUSD)
+
+    def test_corrupt_stored_diagnostic_is_hidden_on_read(self):
+        self.failed_source(diagnostic='request.timeout')
+        for value in ('arbitrary provider body', 'x' * 10000, b'raw response'):
+            self.ledger.db.execute(f'UPDATE {DIAGNOSTICS_TABLE} SET code=?', (value,))
+            self.assertIsNone(self.ledger.diagnostic('first', self.request))
+
+    def test_new_eval_failure_outcomes_keep_unknown_charges(self):
+        for index, outcome in enumerate(('invalid_response', 'network_error', 'internal_error')):
+            run = 'failure-' + str(index)
+            self.assertEqual(self.reserve(run=run, now=self.now + 6 * index), 'reserved')
+            self.ledger.finish(run, self.request, outcome, self.now + 6 * index + 1, 100)
+            self.assertEqual(self.ledger.row(run, self.request)['outcome'], outcome)
+        self.assertEqual(self.live.get_setting('screening_total_reserved_microusd'), 3 * RESERVED_MICROUSD)
+
+    def test_targeted_retry_preserves_baseline_and_costs_only_one_new_attempt(self):
+        baseline = self.failed_source(diagnostic='request.timeout')
+        before, settings = self.live_state(), self.settings()
+        binding = self.ledger.bind_retry('first', 'retry-one', self.case, self.request)
+        self.assertEqual(binding['source_run_id'], 'first')
+        self.assertEqual(binding['case_name'], self.case.name)
+        self.assertEqual(binding['request_hash'], self.request)
+        self.assertEqual(binding['fixture_hash'], self.case.fixture_hash)
+        self.assertEqual(binding['model'], MODEL)
+        self.assertEqual(binding['rubric_hash'], SCREENING_HASH)
+        self.assertEqual(self.ledger.retry_binding('retry-one'), binding)
+        self.assertEqual(self.ledger.bind_retry('first', 'retry-one', self.case, self.request), binding)
+        self.assertEqual(self.settings(), settings)
+        self.assertEqual(self.reserve(run='retry-one', now=self.now + 6), 'reserved')
+        self.ledger.finish('retry-one', self.request, 'ok', self.now + 7, 100, result())
+        self.assertEqual(self.reserve(run='retry-one', now=self.now + 12), 'cached')
+        self.assertEqual(self.ledger.bind_retry('first', 'retry-one', self.case, self.request), binding)
+        self.assertEqual(self.live.get_setting('screening_total_calls'), 2)
+        self.assertEqual(dict(self.ledger.row('first', self.request)), baseline)
+        self.assertEqual(self.ledger.diagnostic('first', self.request), 'request.timeout')
+        self.assertEqual(self.live_state(), before)
+
+    def test_retry_source_must_be_matching_terminal_failure(self):
+        for source in ('unattempted',):
+            with self.assertRaises(ValueError):self.ledger.bind_retry(source, 'retry-one', self.case, self.request)
+        self.assertEqual(self.reserve(), 'reserved')
+        with self.assertRaises(ValueError):self.ledger.bind_retry('first', 'retry-one', self.case, self.request)
+        self.ledger.finish('first', self.request, 'ok', self.now + 1, 100, result())
+        with self.assertRaises(ValueError):self.ledger.bind_retry('first', 'retry-one', self.case, self.request)
+        self.assertIsNone(self.ledger.retry_binding('retry-one'))
+        self.assertEqual(self.live.get_setting('screening_total_calls'), 1)
+
+    def test_retry_refuses_same_run_and_changed_source_provenance(self):
+        baseline = self.failed_source()
+        with self.assertRaises(ValueError):self.ledger.bind_retry('first', 'first', self.case, self.request)
+        for field, value in (('case_name', 'another'), ('fixture_hash', digest('changed')),
+                             ('suite', 'other-suite'), ('model', 'other-model'),
+                             ('rubric_hash', digest('new-rubric')), ('outcome', 'unknown-error')):
+            self.ledger.db.execute(f'UPDATE {TABLE} SET {field}=? WHERE run_id=?', (value, 'first'))
+            before = list(self.ledger.db.iterdump())
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.ledger.bind_retry('first', 'retry-one', self.case, self.request)
+            self.assertEqual(list(self.ledger.db.iterdump()), before)
+            self.ledger.db.execute(f'UPDATE {TABLE} SET {field}=? WHERE run_id=?', (baseline[field], 'first'))
+        other_case = SimpleNamespace(name=self.case.name, fixture_hash=digest('revised-fixture'))
+        with self.assertRaises(ValueError):self.ledger.bind_retry('first', 'retry-one', other_case, self.request)
+        with self.assertRaises(ValueError):self.ledger.bind_retry('first', 'retry-one', self.case, digest('other-request'))
+        self.assertIsNone(self.ledger.retry_binding('retry-one'))
+
+    def test_target_run_cannot_adopt_existing_attempt_even_matching_case(self):
+        self.failed_source()
+        self.assertEqual(self.reserve(run='existing', now=self.now + 6), 'reserved')
+        before = list(self.ledger.db.iterdump())
+        with self.assertRaises(ValueError):
+            self.ledger.bind_retry('first', 'existing', self.case, self.request)
+        self.assertEqual(list(self.ledger.db.iterdump()), before)
+        self.assertIsNone(self.ledger.retry_binding('existing'))
+
+    def test_retry_binding_cannot_be_rebound_and_restricts_new_charges(self):
+        self.failed_source()
+        first = self.ledger.bind_retry('first', 'retry-one', self.case, self.request)
+        self.assertEqual(self.reserve(run='second-source', now=self.now + 6), 'reserved')
+        self.ledger.finish('second-source', self.request, 'network_error', self.now + 7, 100)
+        before = self.settings()
+        with self.assertRaises(ValueError):
+            self.ledger.bind_retry('second-source', 'retry-one', self.case, self.request)
+        with self.assertRaises(ValueError):self.reserve(run='retry-one', request=digest('other'), now=self.now + 12)
+        other_case = SimpleNamespace(name='different', fixture_hash=self.case.fixture_hash)
+        with self.assertRaises(ValueError):
+            self.ledger.reserve('retry-one', other_case, self.request, self.config, self.now + 12)
+        self.assertEqual(self.ledger.retry_binding('retry-one'), first)
+        self.assertEqual(self.settings(), before)
+        self.assertIsNone(self.ledger.row('retry-one', self.request))
+
+    def test_explicit_failed_retry_can_source_new_retry_without_baseline_changes(self):
+        baseline = self.failed_source()
+        self.ledger.bind_retry('first', 'retry-one', self.case, self.request)
+        self.assertEqual(self.reserve(run='retry-one', now=self.now + 6), 'reserved')
+        self.ledger.finish('retry-one', self.request, 'timeout', self.now + 7, 100)
+        self.assertEqual(self.ledger.bind_retry('retry-one', 'retry-two', self.case, self.request)['source_run_id'], 'retry-one')
+        with self.assertRaises(ValueError):self.ledger.bind_retry('retry-one', 'first', self.case, self.request)
+        self.assertIsNone(self.ledger.retry_binding('first'))
+        self.assertEqual(dict(self.ledger.row('first', self.request)), baseline)
+        self.assertEqual(self.live.get_setting('screening_total_calls'), 2)
+
+    def test_legacy_attempt_schema_and_readonly_diagnostics_remain_compatible(self):
+        baseline = self.failed_source()
+        original_schema = self.ledger.db.execute("SELECT sql FROM sqlite_master WHERE name=?", (TABLE,)).fetchone()[0]
+        self.ledger.db.execute(f'DROP TABLE {DIAGNOSTICS_TABLE}')
+        self.ledger.db.execute(f'DROP TABLE {RETRY_TABLE}')
+        before = list(self.live.db.iterdump())
+        with ScreeningEvalLedger(self.path) as readonly:
+            self.assertEqual(dict(readonly.row('first', self.request)), baseline)
+            self.assertIsNone(readonly.diagnostic('first', self.request))
+            self.assertIsNone(readonly.retry_binding('first'))
+        self.assertEqual(list(self.live.db.iterdump()), before)
+        settings, state = self.settings(), self.live_state()
+        self.ledger.initialize()
+        self.assertEqual(self.ledger.db.execute("SELECT sql FROM sqlite_master WHERE name=?", (TABLE,)).fetchone()[0], original_schema)
+        self.assertEqual(dict(self.ledger.row('first', self.request)), baseline)
+        self.assertEqual(self.settings(), settings)
+        self.assertEqual(self.live_state(), state)
+
+    def test_conflicting_retry_bindings_are_atomic_across_connections(self):
+        self.failed_source()
+        self.assertEqual(self.reserve(run='second-source', now=self.now + 6), 'reserved')
+        self.ledger.finish('second-source', self.request, 'timeout', self.now + 7, 100)
+        barrier = Barrier(2)
+        def bind(source):
+            with ScreeningEvalLedger(self.path, write=True) as ledger:
+                barrier.wait()
+                try:
+                    return ledger.bind_retry(source, 'one-target', self.case, self.request)['source_run_id']
+                except ValueError:
+                    return 'rejected'
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(bind, source) for source in ('first', 'second-source')]
+            results = [future.result(timeout=5) for future in futures]
+        self.assertEqual(results.count('rejected'), 1)
+        self.assertIn(self.ledger.retry_binding('one-target')['source_run_id'], ('first', 'second-source'))
+        self.assertEqual(self.live.get_setting('screening_total_calls'), 2)

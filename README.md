@@ -2,7 +2,7 @@ Latest: **0.5.4** fixes the five code-review findings: immediate durable stop co
 
 # Liberdus Discord Moderator
 
-**Automated JEV screening evaluation:** a separate 44-case runner checks harmful and benign messages, including false automatic-deletion candidates, using the production decision rules. No Discord actions or manual test messages. See [run the evaluation](docs/screening-evaluation.md). Actual provider results are pending.
+**Automated JEV screening evaluation:** a separate 44-case runner checks harmful and benign messages, including false automatic-deletion candidates, using the production decision rules. No Discord actions or manual test messages. See [run the evaluation](docs/screening-evaluation.md). The owner baseline returned 43/44 valid responses, with zero benign or ambiguous auto-delete candidates. A separate focused retry now adds safe diagnostics for the one failed call.
 
 **0.4.1 prepared:** [JEV role exemption](docs/role-exemption.md) for `1302455329795342377`, with observed membership, a separate exemption counter and unchanged repetition checks. The owner has now confirmed 0.4.0 single-message reporting and staff review; live exemption activation remains pending.
 

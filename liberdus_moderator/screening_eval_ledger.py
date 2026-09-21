@@ -9,14 +9,20 @@ import re
 from .classifier import MODEL, RESERVED_INPUT_TOKENS, RESERVED_MICROUSD, encoded
 from .jev_batch import ERRORS, Ledger, run_name
 from .screening import SCREENING_HASH, validated_saved
+from .screening_diagnostics import DIAGNOSTIC_CODES, EXTRA_OUTCOMES
 
 TABLE = 'screening_eval_attempts_v1'
+DIAGNOSTICS_TABLE = 'screening_eval_diagnostics_v1'
+RETRY_TABLE = 'screening_eval_retries_v1'
 MAX_RECORDS = 1000
 MAX_RESULT_BYTES = 8192
-OUTCOMES = ERRORS | {'ok'}
+OUTCOMES = ERRORS | EXTRA_OUTCOMES | {'ok'}
 _COLUMNS = ('run_id', 'request_hash', 'suite', 'case_name', 'fixture_hash', 'policy_hash',
             'model', 'rubric_hash', 'day', 'started_at', 'finished_at', 'outcome',
             'result_json', 'latency_ms')
+_DIAGNOSTIC_COLUMNS = ('run_id', 'request_hash', 'code')
+_RETRY_COLUMNS = ('retry_run_id', 'source_run_id', 'case_name', 'request_hash',
+                  'fixture_hash', 'suite', 'model', 'rubric_hash')
 
 
 def _identity(run_id, digest):
@@ -47,8 +53,98 @@ class ScreeningEvalLedger(Ledger):
                 PRIMARY KEY(run_id, request_hash))''')
             if tuple(row['name'] for row in self.db.execute(f'PRAGMA table_info({TABLE})')) != _COLUMNS:
                 raise ValueError('Unsupported screening evaluation schema')
+            self._initialize_side_tables()
             # Caller owns the evaluation lock. Never recover the live worker's rows.
             self.db.execute(f"UPDATE {TABLE} SET outcome='uncertain' WHERE outcome='running'")
+
+    def _initialize_side_tables(self):
+        """Add optional metadata without changing the original attempts schema."""
+        self.db.execute(f'''CREATE TABLE IF NOT EXISTS {DIAGNOSTICS_TABLE}(
+            run_id TEXT NOT NULL, request_hash TEXT NOT NULL, code TEXT NOT NULL,
+            PRIMARY KEY(run_id, request_hash))''')
+        self.db.execute(f'''CREATE TABLE IF NOT EXISTS {RETRY_TABLE}(
+            retry_run_id TEXT PRIMARY KEY, source_run_id TEXT NOT NULL, case_name TEXT NOT NULL,
+            request_hash TEXT NOT NULL, fixture_hash TEXT NOT NULL, suite TEXT NOT NULL,
+            model TEXT NOT NULL, rubric_hash TEXT NOT NULL)''')
+        for table, columns in ((DIAGNOSTICS_TABLE, _DIAGNOSTIC_COLUMNS), (RETRY_TABLE, _RETRY_COLUMNS)):
+            if tuple(row['name'] for row in self.db.execute(f'PRAGMA table_info({table})')) != columns:
+                raise ValueError('Unsupported evaluation metadata schema')
+
+    def diagnostic(self, run_id, digest):
+        """Return a reviewed static code only; historical rows need no side table."""
+        _identity(run_id, digest)
+        if not self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (DIAGNOSTICS_TABLE,)).fetchone():
+            return None
+        row = self.db.execute(f"SELECT CASE WHEN typeof(code)='text' AND length(code)<=128 THEN code ELSE NULL END "
+                              f'FROM {DIAGNOSTICS_TABLE} WHERE run_id=? AND request_hash=?', (run_id, digest)).fetchone()
+        return row[0] if row and row[0] in DIAGNOSTIC_CODES else None
+
+    def retry_binding(self, run_id):
+        from .screening_cases import SUITE
+        _identity(run_id, '0' * 64)
+        if not self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (RETRY_TABLE,)).fetchone():
+            return None
+        row = self.db.execute(f'SELECT * FROM {RETRY_TABLE} WHERE retry_run_id=?', (run_id,)).fetchone()
+        if row is None:
+            return None
+        value = dict(row)
+        _identity(value['source_run_id'], value['request_hash'])
+        if (value['retry_run_id'] != run_id or value['source_run_id'] == run_id
+                or not isinstance(value['case_name'], str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', value['case_name'])
+                or not isinstance(value['fixture_hash'], str) or not re.fullmatch(r'[a-f0-9]{64}', value['fixture_hash'])
+                or value['suite'] != SUITE or value['model'] != MODEL or value['rubric_hash'] != SCREENING_HASH):
+            raise ValueError('Invalid evaluation retry binding')
+        return value
+
+    @staticmethod
+    def _fixture(case):
+        if (not isinstance(case.name, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', case.name)
+                or not isinstance(case.fixture_hash, str) or not re.fullmatch(r'[a-f0-9]{64}', case.fixture_hash)):
+            raise ValueError('Invalid evaluation fixture metadata')
+
+    def bind_retry(self, source_run_id, retry_run_id, case, digest):
+        """Bind an explicitly named, single-case retry before reserving any credits."""
+        from .screening_cases import SUITE
+        _identity(source_run_id, digest)
+        _identity(retry_run_id, digest)
+        self._fixture(case)
+        if source_run_id == retry_run_id:
+            raise ValueError('Retry run must differ from its source')
+        expected = dict(retry_run_id=retry_run_id, source_run_id=source_run_id, case_name=case.name,
+                        request_hash=digest, fixture_hash=case.fixture_hash, suite=SUITE,
+                        model=MODEL, rubric_hash=SCREENING_HASH)
+        with self.transaction():
+            source = self.row(source_run_id, digest)
+            if (source is None or source['outcome'] not in OUTCOMES - {'ok'}
+                    or any(source[name] != expected[name] for name in
+                           ('case_name', 'fixture_hash', 'suite', 'model', 'rubric_hash'))):
+                raise ValueError('Retry requires a matching saved failed evaluation')
+            self._initialize_side_tables()
+            # A failed retry may be explicitly retried under another new name,
+            # but a baseline cannot be rebound as its own descendant.
+            ancestor, seen = source_run_id, set()
+            while ancestor is not None:
+                if ancestor == retry_run_id or ancestor in seen or len(seen) >= MAX_RECORDS:
+                    raise ValueError('Invalid cyclic retry ancestry')
+                seen.add(ancestor)
+                prior = self.retry_binding(ancestor)
+                ancestor = prior['source_run_id'] if prior else None
+            existing = self.retry_binding(retry_run_id)
+            if existing is not None and existing != expected:
+                raise ValueError('Retry run is already bound to a different source or case')
+            rows = self.db.execute(f'SELECT request_hash,case_name,fixture_hash,suite,model,rubric_hash FROM {TABLE} WHERE run_id=?',
+                                   (retry_run_id,)).fetchall()
+            if existing is None and rows:
+                raise ValueError('Retry run must be new or already bound to this failed case')
+            if any(any(row[name] != expected[name] for name in row.keys()) for row in rows):
+                raise ValueError('Retry run already contains unrelated attempts')
+            if existing is not None:
+                return existing
+            if self.db.execute(f'SELECT count(*) FROM {RETRY_TABLE}').fetchone()[0] >= MAX_RECORDS:
+                raise ValueError('Retry binding history is full')
+            self.db.execute(f'INSERT INTO {RETRY_TABLE} VALUES(?,?,?,?,?,?,?,?)',
+                            tuple(expected[name] for name in _RETRY_COLUMNS))
+            return expected
 
     def row(self, run_id, digest):
         _identity(run_id, digest)
@@ -98,10 +194,12 @@ class ScreeningEvalLedger(Ledger):
         from .screening_cases import SUITE
         _identity(run_id, digest)
         now = _timestamp(now)
-        if (not isinstance(case.name, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', case.name)
-                or not isinstance(case.fixture_hash, str) or not re.fullmatch(r'[a-f0-9]{64}', case.fixture_hash)):
-            raise ValueError('Invalid evaluation fixture metadata')
+        self._fixture(case)
         with self.transaction():
+            binding = self.retry_binding(run_id)
+            if binding is not None and (binding['case_name'] != case.name or binding['request_hash'] != digest
+                                        or binding['fixture_hash'] != case.fixture_hash):
+                raise ValueError('Retry run is restricted to its bound failed case')
             if self.row(run_id, digest) is not None:
                 return 'cached'
             reason = self.gate(config)
@@ -141,7 +239,7 @@ class ScreeningEvalLedger(Ledger):
                 self.set_setting('screening_' + name, value)
         return 'reserved'
 
-    def finish(self, run_id, digest, outcome, now, latency, result=None):
+    def finish(self, run_id, digest, outcome, now, latency, result=None, *, diagnostic=None):
         _identity(run_id, digest)
         now = _timestamp(now)
         if outcome not in OUTCOMES:
@@ -152,6 +250,8 @@ class ScreeningEvalLedger(Ledger):
             row = self.row(run_id, digest)
             if row is None or row['outcome'] != 'running':
                 return  # Duplicate/crash completion can never settle a second time.
+            if diagnostic is not None and (not isinstance(diagnostic, str) or diagnostic not in DIAGNOSTIC_CODES):
+                raise ValueError('Invalid evaluation diagnostic code')
             valid, amount = None, None
             if result is not None:
                 try:
@@ -179,5 +279,8 @@ class ScreeningEvalLedger(Ledger):
             self.db.execute(f'UPDATE {TABLE} SET finished_at=?,outcome=?,result_json=?,latency_ms=? '
                             "WHERE run_id=? AND request_hash=? AND outcome='running'",
                             (now, outcome, result_json, latency, run_id, digest))
+            if diagnostic is not None:
+                self._initialize_side_tables()
+                self.db.execute(f'INSERT INTO {DIAGNOSTICS_TABLE} VALUES(?,?,?)', (run_id, digest, diagnostic))
             if outcome == 'usage_exceeds_reservation':
                 self.set_setting('screening_billing_guard', True)

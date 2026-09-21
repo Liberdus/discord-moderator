@@ -4,7 +4,48 @@ The standalone `screening-v1` runner tests **44 synthetic messages** against the
 
 The suite covers credential requests and contrasting warnings/refusals; legitimate support, documentation and ordinary promotions; impersonation, suspicious rewards and targeted abuse; missing context and classifier-injection attempts; and Spanish, Vietnamese and French examples. All URLs use reserved `.invalid` domains. Only synthetic message text and extracted URLs reach JEV, alongside the production rubric. Case names, expected labels and safety classifications stay local.
 
-## Run from the Hermes terminal
+## Recorded baseline and focused retry — September 21, 2026
+
+The owner confirmed the **0.5.4** update, successful runtime import, isolated 9/9 self-test and both shared-gateway restarts. The actual JEV baseline was run and resumed with saved attempts reused. Final supplied results:
+
+| Metric | Result |
+| --- | --- |
+| Valid responses | 43/44 |
+| Purpose / concern matches | 42/43 / 40/43 |
+| Both labels match | 40/43 |
+| Benign cases | 20/20 evaluated; zero staff reports or deletion candidates |
+| Harmful cases | 15/16 evaluated; all 15 would reach staff review |
+| Ambiguous cases | 8/8 evaluated; zero deletion candidates |
+| Known token estimate | $0.001664; one failed attempt has unknown cost |
+| Initial reservations / shared screening calls | $0.121132 / 59 |
+
+Three disagreements remain: `support_seed_priority` returned impersonation at score 0.42; `forwarded_fragment` returned suspicious_offer / promotion at 0.53; `unknown_code` returned sensitive_request / other with displayed score 0.90. All three routed to staff review. Preserve the original expectations and results. These observations support the tested examples, not general accuracy or calibrated confidence.
+
+`official_wallet_transfer` failed with the old generic `provider_or_response_error`. The old runner did not retain enough detail to identify the cause retrospectively. The updated **v2 helper** adds fixed error codes for connection/TLS/read failures, timeouts, specific rejected response fields, provider errors and unexpected runner failures. It never saves raw exceptions, response bodies, headers or credentials. Production validation, rubric, suite and deletion rules are unchanged.
+
+Run **only the failed case** from the Hermes terminal:
+
+```bash
+python3 \
+  /tmp/liberdus-jev-screening-v2-20260921.pyz \
+  retry official_wallet_transfer
+```
+
+This deliberately permits **at most one new API call**, initially reserving **$0.002753** within the unchanged screening caps. It creates the separate run `retry-4d1dc69bc2d838cd`, linked to the failed `screening-v1` case and exact fixture/request/model/rubric. It cannot replace the original failure or charge other cases. No bot installation or restart is required. Existing action flags remain as configured; the helper has no Discord connection or action executor.
+
+Repeating this exact command reuses its saved attempt, even if it failed or was interrupted; it does not keep buying retries. A later deliberate fresh attempt requires a distinct `--run-id`. A successful retry remains separate: the historical baseline still reports 43/44. A new failure can now show its safe diagnostic; a successful retry does not establish what caused the original failure.
+
+Read the focused result without a key lookup or new call:
+
+```bash
+python3 \
+  /tmp/liberdus-jev-screening-v2-20260921.pyz \
+  results --run-id retry-4d1dc69bc2d838cd
+```
+
+Append `--json` for full typed details and retry provenance. `preview official_wallet_transfer` shows its unchanged synthetic input and one-call bound without profile access. `results` without a run ID continues to show the original baseline. Other saved failed cases can use `retry CASE`; an alternate original run can be selected with `--source-run-id`. Missing, successful or mismatched source attempts are refused before a provider call. Retry metadata and diagnostics use separate side tables, retaining the original attempts table and legacy results.
+
+## Original full-suite commands (baseline completed)
 
 ```bash
 python3 \
@@ -48,9 +89,9 @@ The synthetic labels represent a small curated test set, not a random sample of 
 
 Review every benign or ambiguous auto-delete candidate before broadening action scope. Check whether a disagreement concerns communicative purpose, harmful intent or missing context. Preserve these baseline expectations and results; if the rubric changes, use a separately named suite with fresh held-out examples instead of relabeling the existing suite to make it pass. Keep actual provider outcomes separate from deterministic regression tests.
 
-**Status:** the evaluation runner has passed mocked-provider, accounting, isolation, resume and packaging checks. The developer workspace has not executed this new suite against JEV and has no owner-profile key access. Real provider outcomes are pending the owner-run command above. Earlier ten- and five-case purpose-only evaluations remain documented in [JEV batch history](jev-batch.md).
+**Status:** the owner supplied the real baseline outcomes recorded above. The developer workspace has not accessed the owner profile/key or made real provider calls. The focused retry is pending the v2 command above; offline regressions do not substitute for its actual provider result. Earlier ten- and five-case purpose-only evaluations remain documented in [JEV batch history](jev-batch.md).
 
-## Rebuild
+## Original artifact
 
 From the repository root:
 
@@ -68,3 +109,18 @@ Suite hash: `3afb29fb8d9d440159b6d1604e33a83157b82d34347f0ff06a9b333c25ae5fdf`.
 Screening rubric hash: `72e2fe3fec1a4c112174f11806f43eb064ba7b097cbcdefdd512f1a244c8bd1b`.
 
 Validation: **285 core/setup + 136 pinned-runtime integration tests passed (421 total)**, including 31 evaluator/ledger tests. The new artifact's module bytes match the tested source. A profile-free preview confirmed 44 cases and a maximum request size of 2,892 bytes. No real provider results are claimed by these checks.
+
+## v2 patch verification
+
+The v2 patch passed **320 core/setup + 136 pinned-runtime integration tests (456 total)**, including 35 new diagnostics/retry regressions and independent review. The rebuilt helper matches tested module bytes. Production classifier, screening, synthetic fixtures, action rules and transport are byte-identical to the original artifact; no live moderation release or restart is required.
+
+v2 artifact SHA-256: `3e4c579db99ccc8c39c54611dc005e6fd656a72f619b76a9aa16cbbb2f1c826a`.
+
+Rebuild the patched helper under a new path:
+
+```bash
+python3 scripts/build_screening_eval.py \
+  --output /tmp/liberdus-jev-screening-v2-20260921.pyz
+```
+
+The original helper and its recorded hashes above remain historical artifacts. A v2 focused preview confirmed exactly one selected fixture, no provider call and the $0.002753 initial reservation bound. The actual focused retry has not been run from the developer workspace.

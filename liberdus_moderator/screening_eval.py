@@ -18,8 +18,9 @@ from .engine import Engine
 from .jev import ProviderError, evaluate
 from .jev_batch import ERRORS, batch_lock, load_policy, profile_key, run_name
 from .models import MessageEvent
-from .screening import MessageScreener, QUESTIONS, SCREENING_HASH, validate_screening, validated_saved
+from .screening import MessageScreener, QUESTIONS, SCREENING_HASH, validated_saved
 from .screening_cases import CASES, SUITE, SUITE_HASH
+from .screening_diagnostics import (DIAGNOSTICS, EXTRA_OUTCOMES, failure_diagnostic, validate_evaluation)
 from .screening_eval_ledger import ScreeningEvalLedger
 from .storage import Store
 
@@ -53,9 +54,19 @@ def simulation(case, settings=None):
         yield engine, worker, job
 
 
-def requests(settings=None):
+def retry_run_name(source_run_id, case):
+    """A repeated retry command reuses the same single paid attempt, even on failure."""
+    run_name(source_run_id)
+    digest = hashlib.sha256(encoded([source_run_id, case.name, case.fixture_hash, SCREENING_HASH])).hexdigest()
+    return "retry-" + digest[:16]
+
+
+def requests(settings=None, *, case_name=None):
+    selected = CASES if case_name is None else tuple(case for case in CASES if case.name == case_name)
+    if not selected:
+        raise ValueError("Expected a known screening case")
     result = []
-    for case in CASES:
+    for case in selected:
         with simulation(case, settings) as (_, _, job):
             result.append((case, job.payload, hashlib.sha256(job.payload).hexdigest()))
     if len({digest for _, _, digest in result}) != len(result):
@@ -91,10 +102,15 @@ def report(ledger, run_id, prepared, *, new_attempts=0, stopped=None):
         row = ledger.row(run_id, digest)
         if row is not None:
             item.update(policy_hash=row["policy_hash"], started_at=row["started_at"], finished_at=row["finished_at"])
-            item["outcome"] = row["outcome"] if row["outcome"] in ERRORS | {"ok", "running"} else "unavailable"
+            item["outcome"] = row["outcome"] if row["outcome"] in ERRORS | EXTRA_OUTCOMES | {"ok", "running"} else "unavailable"
             if (row["model"] != MODEL or row["rubric_hash"] != SCREENING_HASH or row["suite"] != SUITE
                     or row["case_name"] != case.name or row["fixture_hash"] != case.fixture_hash):
                 item["outcome"] = "unavailable"
+            diagnostic = ledger.diagnostic(run_id, digest)
+            if diagnostic is not None:
+                item.update(diagnostic=diagnostic, diagnostic_message=DIAGNOSTICS[diagnostic])
+            elif item["outcome"] not in {"ok", "running"}:
+                item["diagnostic_message"] = "Historical failure; details were not recorded."
             if type(row["latency_ms"]) is int and 0 <= row["latency_ms"] <= 86400000:
                 item["latency_ms"] = row["latency_ms"]
             if item["outcome"] in {"ok", "stale", "usage_exceeds_reservation"}:
@@ -127,7 +143,15 @@ def report(ledger, run_id, prepared, *, new_attempts=0, stopped=None):
     missed = [item["case"] for item in valid if item["safety"] == "harmful" and not item["would_report"]]
     attempted = sum(item["outcome"] != "not_run" for item in records)
     unknown_cost = sum(item["outcome"] != "not_run" and "estimated_microusd" not in item for item in records)
-    return {"suite": SUITE, "suite_hash": SUITE_HASH, "run_id": run_id, "model": MODEL,
+    retry = ledger.retry_binding(run_id)
+    if retry:
+        source = ledger.row(retry["source_run_id"], retry["request_hash"])
+        source_outcome = source["outcome"] if source is not None else "unavailable"
+        if source_outcome not in ERRORS | EXTRA_OUTCOMES | {"ok", "running"}:
+            source_outcome = "unavailable"
+        retry = {**retry, "source_outcome": source_outcome,
+                 "source_diagnostic": ledger.diagnostic(retry["source_run_id"], retry["request_hash"])}
+    return {"suite": SUITE, "suite_hash": SUITE_HASH, "run_id": run_id, "model": MODEL, "retry": retry,
         "rubric_hash": SCREENING_HASH, "decision_version": DECISION_VERSION, "records": records,
         "matched": sum(item["match"] is True for item in valid),
         "purpose_matched": sum(item["purpose_match"] for item in valid),
@@ -143,13 +167,25 @@ def report(ledger, run_id, prepared, *, new_attempts=0, stopped=None):
         "note": "Synthetic hypotheses, not measured server accuracy. Qualification assumes other gates pass; no Discord actions."}
 
 
-async def run_evaluation(ledger, config, prepared, evaluator, *, run_id=SUITE, current=lambda: True,
+async def run_evaluation(ledger, config, prepared, evaluator, *, run_id=SUITE, source_run_id=None, current=lambda: True,
         clock=time.time, monotonic=time.monotonic, sleep=asyncio.sleep, progress=lambda text: None):
     run_name(run_id)
     expected = {case.name: (case, payload, digest) for case, payload, digest in requests(config.classifier)}
     if len({case.name for case, _, _ in prepared}) != len(prepared) or any(expected.get(item[0].name) != item for item in prepared):
         raise ValueError("Expected the fixed screening suite requests")
+    if source_run_id is not None:
+        run_name(source_run_id)
+        if len(prepared) != 1 or source_run_id == run_id:
+            raise ValueError("Expected a single failed case and a separate retry run")
     ledger.initialize()
+    if source_run_id is not None:
+        case, _, digest = prepared[0]
+        ledger.bind_retry(source_run_id, run_id, case, digest)
+    binding = ledger.retry_binding(run_id)
+    if binding and (len(prepared) != 1 or prepared[0][0].name != binding["case_name"]
+                    or prepared[0][2] != binding["request_hash"]
+                    or prepared[0][0].fixture_hash != binding["fixture_hash"]):
+        raise ValueError("Expected only the case bound to this retry run")
     deadline = monotonic() + MAX_RUN_SECONDS
     attempts, stopped = 0, None
     for case, payload, digest in prepared:
@@ -174,28 +210,30 @@ async def run_evaluation(ledger, config, prepared, evaluator, *, run_id=SUITE, c
             stopped = admission
             break
         attempts += 1
-        started, result = monotonic(), None
+        started, result, diagnostic, phase = monotonic(), None, None, "request"
         try:
             async def invoke():
                 if not current() or ledger.gate(config):
                     raise ProviderError("stale")
                 return await evaluator(payload)
             raw = await asyncio.wait_for(invoke(), config.classifier.timeout_seconds)
-            result = validate_screening(raw)
+            phase = "validation"
+            result = validate_evaluation(raw)
             if result["input_tokens"] > RESERVED_INPUT_TOKENS:
                 outcome = "usage_exceeds_reservation"
+                _, diagnostic = failure_diagnostic(ProviderError(outcome), phase)
             elif not current() or ledger.gate(config):
-                outcome = "stale"
+                outcome, diagnostic = "stale", "state.stale"
             else:
                 outcome = "ok"
         except asyncio.CancelledError:
-            ledger.finish(run_id, digest, "uncertain", clock(), int((monotonic() - started) * 1000))
+            ledger.finish(run_id, digest, "uncertain", clock(), int((monotonic() - started) * 1000),
+                          diagnostic="request.interrupted")
             raise
-        except TimeoutError:
-            outcome = "timeout"
         except Exception as error:
-            outcome = str(error) if isinstance(error, ProviderError) and str(error) in ERRORS else "provider_or_response_error"
-        ledger.finish(run_id, digest, outcome, clock(), int((monotonic() - started) * 1000), result)
+            outcome, diagnostic = failure_diagnostic(error, phase)
+        ledger.finish(run_id, digest, outcome, clock(), int((monotonic() - started) * 1000), result,
+                      diagnostic=diagnostic)
         progress(case.name + ": " + outcome)
         if outcome != "ok":
             stopped = outcome
@@ -205,6 +243,9 @@ async def run_evaluation(ledger, config, prepared, evaluator, *, run_id=SUITE, c
 
 def format_report(data):
     lines = ["JEV SCREENING EVALUATION", "Run: " + data["run_id"], "-" * 32]
+    if data.get("retry"):
+        lines += ["Focused retry", "Original run: " + data["retry"]["source_run_id"],
+                  "Original outcome: " + data["retry"]["source_outcome"], "Original result preserved.", "-" * 32]
     benign, harmful, ambiguous = (data["groups"][name] for name in ("benign", "harmful", "ambiguous"))
     lines += [f"Valid: {data['successful']}/{len(data['records'])}", f"Label matches: {data['matched']}/{data['successful']}",
         f"Purpose matches: {data['purpose_matched']}/{data['successful']}",
@@ -221,7 +262,7 @@ def format_report(data):
         risk = ((item["safety"] == "benign" and item["would_report"])
                 or (item["safety"] == "harmful" and item["would_report"] is False)
                 or (item["safety"] == "ambiguous" and item["would_qualify_for_auto_delete"]))
-        if item["outcome"] == "not_run" or (item["match"] is True and not risk):
+        if item["outcome"] == "not_run" or (item["match"] is True and not risk and not data.get("retry")):
             continue
         verdict = ("MATCH" if item["match"] else "REVIEW") if item["outcome"] == "ok" else item["outcome"].upper()
         if item["safety"] == "benign" and item["would_qualify_for_auto_delete"]:
@@ -229,6 +270,10 @@ def format_report(data):
         lines += [f"{index:02d} {item['title']}", f"  {item['safety']} | {verdict}",
             "  Want concern: " + "/".join(item["expected_concerns"]),
             "  Want purpose: " + "/".join(item["expected_purposes"])]
+        if item.get("diagnostic_message"):
+            if item.get("diagnostic"):
+                lines.append("  Diagnostic: " + item["diagnostic"])
+            lines.append("  " + item["diagnostic_message"])
         if item["outcome"] == "ok":
             route = "AUTO-DELETE CANDIDATE" if item["would_qualify_for_auto_delete"] else "STAFF REPORT" if item["would_report"] else "NO REPORT"
             lines += ["  Got concern: " + item["actual_concern"], "  Got purpose: " + item["actual_purpose"],
@@ -240,7 +285,7 @@ def format_report(data):
         f"Shared screening calls: {data['shared_total_calls']}"]
     if data["stopped"]:
         lines.append("Stopped: " + data["stopped"])
-    lines += ["Details: results --json", "Synthetic text; real JEV API.", "No Discord messages or actions.",
+    lines += ["Saved results: results --run-id " + data["run_id"] + " --json", "Synthetic text; real JEV API.", "No Discord messages or actions.",
         "Candidates assume other gates pass.", "Expected labels are hypotheses.",
         "Not server accuracy or proof of safety.", "Missing results are not passes.",
         "Scores are not accuracy guarantees.", "Estimates are not invoices."]
@@ -249,27 +294,40 @@ def format_report(data):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("preview", "run", "results"), nargs="?", default="preview")
-    parser.add_argument("--run-id", default=SUITE, help="Reuse to resume; a new name buys fresh evaluations")
+    parser.add_argument("operation", choices=("preview", "run", "results", "retry"), nargs="?", default="preview")
+    parser.add_argument("case", choices=tuple(case.name for case in CASES), nargs="?",
+                        help="Required for retry; optional for a one-case preview")
+    parser.add_argument("--run-id", help="Reuse to resume; a new name buys fresh evaluations")
+    parser.add_argument("--source-run-id", default=SUITE, help="Original failed run for a focused retry")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
+    if args.operation == "retry" and args.case is None:
+        parser.error("retry requires one case name")
+    if args.case is not None and args.operation not in {"retry", "preview"}:
+        parser.error("a case name is only accepted for retry or preview")
+    if args.source_run_id != SUITE and args.operation not in {"retry", "preview"}:
+        parser.error("--source-run-id is only accepted for retry or preview")
     try:
-        args.run_id = run_name(args.run_id)
+        source_run_id = run_name(args.source_run_id)
+        selected_case = next((case for case in CASES if case.name == args.case), None)
+        args.run_id = run_name(args.run_id or (retry_run_name(source_run_id, selected_case) if selected_case else SUITE))
         if args.operation == "preview":
-            prepared = requests()
+            prepared = requests(case_name=args.case)
             print(json.dumps({"suite": SUITE, "suite_hash": SUITE_HASH, "model": MODEL,
+                "run_id": args.run_id, "source_run_id": source_run_id if selected_case else None,
                 "rubric_hash": SCREENING_HASH, "decision_version": DECISION_VERSION, "questions": QUESTIONS,
-                "cases": [asdict(case) for case in CASES], "maximum_attempts": len(CASES),
-                "maximum_initial_reservation_microusd": len(CASES) * RESERVED_MICROUSD,
+                "cases": [asdict(case) for case, _, _ in prepared], "maximum_attempts": len(prepared),
+                "maximum_initial_reservation_microusd": len(prepared) * RESERVED_MICROUSD,
                 "maximum_payload_bytes": max(len(payload) for _, payload, _ in prepared),
-                "provider_called": False}, indent=2, ensure_ascii=False))
+                "provider_called": False, "source_failure_checked": False}, indent=2, ensure_ascii=False))
             return 0
         profile = Path.home() / ".hermes/profiles/liberdus-mod"
         config = load_policy(profile)
         database = profile / "state/moderation.sqlite3"
-        prepared = requests(config.classifier if args.operation == "run" else None)
         if args.operation == "results":
             with ScreeningEvalLedger(database) as ledger:
+                binding = ledger.retry_binding(args.run_id)
+                prepared = requests(case_name=binding["case_name"] if binding else None)
                 data = report(ledger, args.run_id, prepared)
         else:
             python = Path.home() / ".hermes/hermes-agent/venv/bin/python"
@@ -278,11 +336,12 @@ def main():
             if Path(sys.prefix).resolve() != python.parent.parent.resolve():
                 entry = [sys.argv[0]] if sys.argv[0].endswith(".pyz") else ["-m", "liberdus_moderator.screening_eval"]
                 os.execv(str(python), [str(python), "-B", *entry, *sys.argv[1:]])
+            prepared = requests(config.classifier, case_name=args.case)
             with batch_lock(profile), ScreeningEvalLedger(database, write=True) as ledger:
                 reason = ledger.gate(config)
                 if reason:
                     raise ValueError("Evaluation stopped: " + reason)
-                # Validate the scoped key before reserving; never print it or construct a Discord client.
+                # Validate the scoped key before any new reservation; never display it.
                 key = profile_key(profile)
                 async def provider(payload):
                     return await evaluate(payload, key, config.classifier.timeout_seconds)
@@ -292,16 +351,18 @@ def main():
                     except (OSError, ValueError):
                         return False
                 data = asyncio.run(run_evaluation(ledger, config, prepared, provider, run_id=args.run_id,
+                    source_run_id=source_run_id if args.operation == "retry" else None,
                     current=current, progress=lambda line: print(line, file=sys.stderr, flush=True)))
         print(json.dumps(data, indent=2, ensure_ascii=False) if args.json else format_report(data))
-        if data["successful"] != len(CASES):
+        total = len(prepared)
+        if data["successful"] != total:
             return 2
-        return 0 if data["matched"] == len(CASES) and not data["benign_auto_delete_cases"] else 1
+        return 0 if data["matched"] == total and not data["benign_auto_delete_cases"] else 1
     except KeyboardInterrupt:
         print("Interrupted. Saved attempts will not be retried; use results or resume the same run.", file=sys.stderr)
         return 130
     except (ValueError, ProviderError) as error:
-        allowed = ("Run name", "Expected", "Another batch", "Evaluation stopped", "The profile", "Synthetic")
+        allowed = ("Run name", "Expected", "Another batch", "Evaluation stopped", "The profile", "Synthetic", "Retry ")
         message = "The profile TypeSafe key is missing" if isinstance(error, ProviderError) else (
             str(error) if str(error).startswith(allowed) else "Check the owned profile, policy and budget state")
         print("Evaluation stopped: " + message + ".", file=sys.stderr)
