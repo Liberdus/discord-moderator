@@ -152,6 +152,7 @@ class MessageScreener(ShadowClassifier):
         if (event.version != row["version"] or event.guild_id != self.config.guild_id
                 or event.channel_id not in self.config.monitored_channel_ids
                 or event.author_id == self.config.bot_user_id or event.is_bot or event.is_webhook
+                or set(event.author_role_ids) & set(self.settings.exempt_role_ids)
                 or event.is_thread or event.has_attachments or not event.content.strip()
                 or event.created_at < self.store.get_setting("coverage_started_at", 0)
                 or event.created_at <= now - self.config.storage.retention_seconds

@@ -1,5 +1,7 @@
 # Single-message JEV screening
 
+**Latest:** the owner confirmed a single-message Sensitive request report and saved Needs attention assessment. The [0.4.1 role-exemption update](role-exemption.md) adds an opt-out role and a current configurator; use that guide when upgrading an already-running 0.4.0 pilot.
+
 Version **0.4.0**, September 21, 2026. Implemented for the approved private Liberdus test scope. Live installation and provider results for this new rubric remain owner checks. The prior 0.3.5 staff workflow is confirmed: Looks okay completed a review and removed it from the pending queue, 8 → 7.
 
 ## What changes

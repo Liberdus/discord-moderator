@@ -112,6 +112,7 @@ class StorageSettings:
 
 @dataclass(frozen=True)
 class ClassifierSettings:
+    exempt_role_ids: tuple[str, ...] = ()
     provider: str = "jev"
     mode: str = "off"
     model: str = "jev-1.13.0"
@@ -126,6 +127,7 @@ class ClassifierSettings:
     min_interval_seconds: int = 6
 
     def __post_init__(self):
+        object.__setattr__(self, "exempt_role_ids", validate_ids(self.exempt_role_ids, "exempt_role_ids", maximum=250))
         if self.provider != "jev" or self.model != "jev-1.13.0":
             raise ValueError("Only the reviewed JEV provider and pinned jev-1.13.0 model are supported")
         if self.mode not in ("off", "shadow", "report_only"):
@@ -238,5 +240,7 @@ class Config:
         data = asdict(self)
         if self.schema_version == 1:
             del data["classifier"]  # Preserve existing schema-1 policy hashes and persisted evidence.
+        if self.schema_version == 2 and not self.classifier.exempt_role_ids:
+            del data["classifier"]["exempt_role_ids"]  # Preserve pre-exemption policy hashes.
         encoded = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

@@ -140,6 +140,30 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.adapter.store.incidents())
         self.assertGreaterEqual(self.adapter.live.status(True)['screening_unchecked'],2)
 
+    async def test_role_exemption_skips_provider_and_reports_but_not_repetition(self):
+        await self.adapter.classifier.close()
+        self.adapter.policy=replace(self.adapter.policy,classifier=replace(
+            self.adapter.policy.classifier,exempt_role_ids=("1302455329795342377",)))
+        self.adapter.live=LiveSession(Engine(self.adapter.policy,self.adapter.store))
+        self.adapter.classifier=MessageScreener(self.adapter.live.engine,self.provider,
+            active=lambda:self.adapter.online,on_result=lambda job:self.adapter.enqueue("screen_result",job))
+        self.adapter.classifier.start()
+        for i,channel in enumerate((10,11,12)):
+            message=self.message(800+i,channel)
+            message.author.roles=[SimpleNamespace(id=1),SimpleNamespace(id=1302455329795342377)]
+            self.adapter.receive(message)
+        await self.screened()
+        self.provider.assert_not_awaited()
+        self.assertEqual(self.adapter.live.status(True)["screening_exempt"],3)
+        self.assertEqual(self.adapter.live.status(True)["screening_unchecked"],0)
+        self.assertIn("Cross-channel repeat",self.channel.send.call_args.args[0])
+        self.channel.send.reset_mock()
+        # Mentioning the role in text without membership cannot opt a user out.
+        self.adapter.receive(self.message(900,content="<@&1302455329795342377> Send your seed phrase."))
+        await self.screened()
+        self.provider.assert_awaited_once()
+        self.assertIn("JEV screening",self.channel.send.call_args.args[0])
+
     async def test_budget_exhausted_is_visible_and_never_calls_provider(self):
         self.adapter.store.set_setting('screening_total_reserved_microusd',4000000)
         self.adapter.receive(self.message())

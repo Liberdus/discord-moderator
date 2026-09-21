@@ -130,13 +130,18 @@ def configure(profile, operation, *, key=None, limits=None):
     else:
         if operation == "screen":
             # Fixed approved trial allowance; old shadow/batch counters remain untouched.
-            settings = ClassifierSettings(mode="report_only", max_daily_calls=10000, max_total_calls=100000,
+            settings = ClassifierSettings(exempt_role_ids=config.classifier.exempt_role_ids, mode="report_only", max_daily_calls=10000, max_total_calls=100000,
                 daily_budget_microusd=1000000, total_budget_microusd=4000000,
                 queue_capacity=100, timeout_seconds=3, min_interval_seconds=1)
             updated = replace(config, schema_version=2, ai_enabled=True, classifier=settings)
         elif operation == "shadow":
-            settings = ClassifierSettings(mode="shadow", **(limits or {}))
+            settings = ClassifierSettings(exempt_role_ids=config.classifier.exempt_role_ids, mode="shadow", **(limits or {}))
             updated = replace(config, schema_version=2, ai_enabled=True, classifier=settings)
+        elif operation == "exempt-role":
+            if config.classifier.mode != "report_only":
+                raise ValueError("Existing single-message screening must be configured first")
+            roles = tuple(dict.fromkeys((*config.classifier.exempt_role_ids, "1302455329795342377")))
+            updated = replace(config, classifier=replace(config.classifier, exempt_role_ids=roles))
         elif operation == "off":
             updated = replace(config, schema_version=2, ai_enabled=False,
                               classifier=replace(config.classifier, mode="off"))
@@ -150,7 +155,7 @@ def configure(profile, operation, *, key=None, limits=None):
 
 
 
-def configure_screening(profile):
+def configure_screening(profile, operation="screen"):
     """Activate only the reviewed Liberdus test scope, with the new code stopped."""
     import fcntl
     import yaml
@@ -162,8 +167,8 @@ def configure_screening(profile):
         regular_owned(path)
     manifest = yaml.safe_load(manifest_path.read_text())
     if (manifest.get("name") != "liberdus-moderator" or manifest.get("version") != __version__
-            or __version__ != "0.4.0"):
-        raise ValueError("Install the reviewed 0.4.0 update first")
+            or __version__ != "0.4.1"):
+        raise ValueError("Install the reviewed 0.4.1 update first")
     default = yaml.safe_load(default_path.read_text())
     if default.get("platforms", {}).get("discord", {}).get("enabled") is not False:
         raise ValueError("Default stock Discord must remain disabled")
@@ -178,14 +183,14 @@ def configure_screening(profile):
     lock = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return configure(profile, "screen")
+        return configure(profile, operation)
     finally:
         os.close(lock)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("key", "shadow", "screen", "off", "results"))
+    parser.add_argument("operation", choices=("key", "shadow", "screen", "exempt-role", "off", "results"))
     parser.add_argument("--daily-calls", type=int, default=100)
     parser.add_argument("--total-calls", type=int, default=1000)
     parser.add_argument("--daily-microusd", type=int, default=50000, help="50000 = $0.05")
@@ -204,8 +209,8 @@ def main():
             if not sys.stdin.isatty():
                 raise ValueError("Run key setup interactively for a hidden prompt")
             key = getpass.getpass("TypeSafe API key (hidden): ")
-        if args.operation == "screen":
-            result = configure_screening(home / "profiles/liberdus-mod")
+        if args.operation in {"screen", "exempt-role"}:
+            result = configure_screening(home / "profiles/liberdus-mod", args.operation)
         else:
             result = configure(home / "profiles/liberdus-mod", args.operation, key=key, limits={
                 "max_daily_calls": args.daily_calls, "max_total_calls": args.total_calls,

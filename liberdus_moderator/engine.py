@@ -50,6 +50,8 @@ class Engine:
             "classifier_state": self.store.get_setting("screening_state" if self.config.classifier.mode == "report_only" else "classifier_state", "not_started") if self.config.ai_enabled else "off",
             "ai_attempts": self.store.get_setting("classifier_total_calls", 0) + self.store.get_setting("screening_total_calls", 0),
             "screening_attempts": self.store.get_setting("screening_total_calls", 0),
+            "screening_exempt": self.store.get_setting("screening_exempt", 0),
+            "screening_exempt_role_ids": list(self.config.classifier.exempt_role_ids),
             "screening_checked": self.store.get_setting("screening_checked", 0),
             "screening_flagged": self.store.get_setting("screening_flagged", 0),
             "screening_unchecked": self.store.get_setting("screening_unchecked", 0),

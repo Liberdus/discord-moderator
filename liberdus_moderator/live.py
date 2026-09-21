@@ -102,6 +102,8 @@ class LiveSession:
             gap = status["last_coverage_gap"] or {"reason": "none"}
             screening = (f"\nScreened: {status['screening_checked']} | Flagged: {status['screening_flagged']}"
                          f"\nNot checked: {status['screening_unchecked']} | Screening attempts: {status['screening_attempts']}"
+                         f"\nRole-exempt: {status['screening_exempt']}"
+                         f"\nExempt roles: {', '.join(status['screening_exempt_role_ids'][:3]) or 'none'}"
                          f"\nTrial used/reserved: ${status['screening_reserved_microusd'] / 1000000:.6f}"
                          f"\nTrial cap: ${self.config.classifier.daily_budget_microusd / 1000000:g}/day | ${self.config.classifier.total_budget_microusd / 1000000:g} total"
                          if status['classifier_mode'] == 'report_only' else "")

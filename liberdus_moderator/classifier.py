@@ -153,6 +153,7 @@ class ShadowClassifier:
             if (not row or row["version"] != item["version"] or not row["eligible"]
                     or item["guild_id"] != self.config.guild_id
                     or item["channel_id"] not in self.config.monitored_channel_ids
+                    or set(item.get("author_role_ids", ())) & set(self.settings.exempt_role_ids)
                     or item["author_id"] != incident["author_id"]
                     or item["author_id"] == self.config.bot_user_id
                     or any(item.get(flag) for flag in ("is_bot", "is_webhook", "is_thread", "has_attachments"))):

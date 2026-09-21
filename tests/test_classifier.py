@@ -96,6 +96,18 @@ class ShadowTests(unittest.IsolatedAsyncioTestCase):
     def attempt(self, identity):
         return dict(self.store.db.execute("SELECT * FROM classifier_attempts WHERE incident_id=?", (identity,)).fetchone())
 
+    async def test_role_exemption_also_prevents_legacy_shadow_evaluation(self):
+        self.config = replace(self.config, classifier=replace(self.config.classifier, exempt_role_ids=("77",)))
+        self.engine = Engine(self.config, self.store, clock=lambda:self.now)
+        self.worker = ShadowClassifier(self.engine,self.provider)
+        for i,channel in enumerate(self.config.monitored_channel_ids):
+            self.engine.process(MessageEvent("1",channel,str(800+i),"50","Repeated role-exempt message for testing.",
+                                            self.now-3+i,author_role_ids=("77",)))
+        identity=self.store.incidents()[0]["id"]
+        await self.worker.evaluate_one(identity)
+        self.provider.assert_not_awaited()
+        self.assertTrue(self.store.reports())
+
     async def test_shadow_only_incidents_no_report_mutation_and_no_copied_ids(self):
         self.assertIsNone(self.worker.snapshot("not-an-incident"))
         identity = self.pattern(content="Repeated offer for <@977263877391794217> see https://example.invalid/test")

@@ -301,6 +301,32 @@ class ScreeningTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.get_setting("screening_total_calls"), 2)
         self.assertEqual(self.store.get_setting("screening_total_reserved_microusd"), RESERVED_MICROUSD+21)
 
+    async def test_exempt_role_blocks_screening_even_with_direct_worker_submission(self):
+        conf = config(exempt_role_ids=("1302455329795342377",))
+        self.engine = Engine(conf, self.store, clock=lambda: self.now)
+        self.worker = MessageScreener(self.engine, self.provider)
+        for i, channel in enumerate(("10", "11", "12")):
+            self.engine.process(self.event(str(800+i), channel_id=channel,
+                                           author_role_ids=("1302455329795342377",)))
+            self.assertIsNone(self.worker.snapshot(str(800+i)))
+        self.provider.assert_not_awaited()
+        self.assertEqual(self.store.get_setting("screening_total_calls", 0), 0)
+        self.assertEqual(self.store.incidents()[0]["rule_id"], "cross_channel_repeat")
+        self.now += 2
+        self.engine.process(self.event("900", author_role_ids=("88",)))
+        await self.worker.evaluate_one(self.worker.snapshot("900"))
+        self.provider.assert_awaited_once()
+
+    def test_empty_exemption_preserves_existing_policy_hash_and_invalid_roles_rejected(self):
+        from dataclasses import asdict
+        original = config()
+        data = asdict(original)
+        del data["classifier"]["exempt_role_ids"]
+        expected = hashlib.sha256(json.dumps(data,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+        self.assertEqual(original.policy_hash, expected)
+        for roles in (("not-a-role",), ("0",), ("88","88"), "88"):
+            with self.assertRaises(ValueError): config(exempt_role_ids=roles)
+
     def test_all_typed_answer_fields_are_validated(self):
         for label in CONCERN['criteria']:
             self.assertEqual(validate_screening(response(label))['concern'], label)

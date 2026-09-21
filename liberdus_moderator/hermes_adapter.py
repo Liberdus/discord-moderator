@@ -57,6 +57,7 @@ def snapshot(message):
     return MessageEvent(
         guild_id=str(message.guild.id), channel_id=str(message.channel.id), message_id=str(message.id),
         author_id=str(message.author.id), content=message.content, created_at=message.created_at.timestamp(),
+        author_role_ids=tuple(str(role.id) for role in getattr(message.author, "roles", ())),
         edited_at=message.edited_at.timestamp() if message.edited_at else None,
         is_bot=message.author.bot, is_webhook=message.webhook_id is not None,
         is_thread=isinstance(message.channel, discord.Thread), has_attachments=bool(message.attachments),
@@ -215,7 +216,10 @@ class ModerationAdapter(BasePlatformAdapter):
         if self.classifier is not None:
             if self.policy.classifier.mode == "report_only":
                 if result["disposition"] in {"no_match", "review"} and evidence.content.strip():
-                    self.classifier_candidates.add(evidence.message_id)
+                    if set(evidence.author_role_ids) & set(self.policy.classifier.exempt_role_ids):
+                        self.store.set_setting("screening_exempt", self.store.get_setting("screening_exempt", 0) + 1)
+                    else:
+                        self.classifier_candidates.add(evidence.message_id)
             else:
                 self.classifier_candidates.update(result["incident_ids"])
         return result
