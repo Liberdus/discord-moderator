@@ -46,6 +46,19 @@ def initialize(engine):
         store.set_setting('actions_schema', 1)
 
 
+def message_changes(evidence, fetched):
+    """Compare message data only; membership is verified separately at action time.
+
+    Keep persisted event hashes unchanged: they still bind original role metadata
+    to the classifier's evidence. REST messages need not carry gateway members.
+    """
+    from .models import MessageEvent
+    saved = MessageEvent.from_dict({key: value for key, value in evidence.items()
+                                    if key not in {'version', 'fingerprint'}})
+    before, after = saved.to_dict(), fetched.to_dict()
+    return tuple(key for key in before if key != 'author_role_ids' and before[key] != after[key])
+
+
 def current(engine, identity, revision, *, allow_complete=False):
     incident = engine.store.incident(identity)
     if (not incident or incident['revision'] != revision or incident['status'] != 'open'

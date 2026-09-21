@@ -1,4 +1,4 @@
-Latest: **0.5.0** adds Delete/Dismiss, opt-in automatic deletion for sensitive requests above 0.90, and staff-confirmed 10-minute timeouts with separate persisted switches. See [installation, permissions and commands](docs/moderation-actions.md). New action switches default OFF; live owner activation remains pending.
+Latest: **0.5.1** fixes false “Message changed” refusals when Discord omits member roles from fetched messages. Message content and identity checks remain strict, with fresh membership checks before automatic deletion when role exemption is enabled. See [the update and live verification steps](docs/deletion-fix.md). The owner confirmed 0.5.0 deletion switches ON; successful live deletion awaits this fix.
 
 # Liberdus Discord Moderator
 
@@ -16,7 +16,7 @@ A **moderation detection core** with an optional, explicitly enabled Hermes Disc
 
 **0.3.5 staff workflow confirmed live — September 21, 2026:** Needs attention remained pending; Looks okay completed the review and removed the incident from the queue (8 → 7). The owner supplied the updated display, reviewer, private confirmation and pending list. [Staff-review behavior](docs/staff-assessment.md) remains available; this completed check needs no repeat installation.
 
-**0.4.0 prepared — single-message JEV reports:** an explicit `classifier.mode = "report_only"` screens eligible human text in the approved test channels, using one purpose/concern request per message version. Specific concerns create private incidents with saved text, links and staff buttons; ordinary promotions, warnings and none/unclear results are not automatically violations. Deterministic spam detection stays independent. The approved trial uses separate $1/day and $4 lifetime accounting, with validated usage settlement and conservative reservations for unknown charges. Follow [the owner-run screening update and first tests](docs/message-screening.md). The owner later confirmed single-message reporting, including a sensitive-request incident; 0.5.0 action installation remains pending.
+**0.4.0 prepared — single-message JEV reports:** an explicit `classifier.mode = "report_only"` screens eligible human text in the approved test channels, using one purpose/concern request per message version. Specific concerns create private incidents with saved text, links and staff buttons; ordinary promotions, warnings and none/unclear results are not automatically violations. Deterministic spam detection stays independent. The approved trial uses separate $1/day and $4 lifetime accounting, with validated usage settlement and conservative reservations for unknown charges. Follow [the owner-run screening update and first tests](docs/message-screening.md). The owner later confirmed single-message reporting, including a sensitive-request incident; 0.5.0 action installation was subsequently confirmed; see the 0.5.1 fix above.
 
 ## Offline fixture flow
 

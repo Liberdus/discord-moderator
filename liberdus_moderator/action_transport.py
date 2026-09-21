@@ -83,10 +83,26 @@ class ActionTransport:
                     raise actions.ActionError('Missing Manage Messages in the test channel.')
                 message = await asyncio.wait_for(channel.fetch_message(int(item['message_id'])), timeout=5)
                 from .hermes_adapter import snapshot
-                if snapshot(message).version != item['version']:
-                    raise actions.ActionError('Message changed since the report. No action on changed content.')
+                changes = actions.message_changes(item, snapshot(message))
+                if changes:
+                    raise actions.ActionError('Message changed (' + ', '.join(changes) + '). No action taken.')
                 self.action_guard(payload, generation)
                 fetched.append(message)
+            if (payload['automatic'] and self.policy.classifier.exempt_role_ids
+                    and self.store.get_setting('role_exemption_enabled', True) is True):
+                # A fetched Message.author can be a User or a cached Member. Neither
+                # proves current roles. Fetch membership explicitly before auto-delete.
+                try:
+                    member = await asyncio.wait_for(fetched[0].guild.fetch_member(int(payload['author_id'])), timeout=5)
+                    from .models import validate_ids
+                    roles = validate_ids(tuple(str(role.id) for role in member.roles), 'current author roles', maximum=250)
+                    if (str(member.id) != payload['author_id'] or str(member.guild.id) != self.policy.guild_id or member.bot):
+                        raise ValueError('Unexpected member identity')
+                except Exception as error:
+                    raise actions.ActionError('Current author roles unavailable. Automatic deletion skipped.') from error
+                self.action_guard(payload, generation)
+                if engine.role_exempt(roles):
+                    raise actions.ActionError('Author currently has an exempt role. Automatic deletion skipped.')
             if payload['kind'] == 'timeout':
                 guild = fetched[0].guild
                 member = await asyncio.wait_for(guild.fetch_member(int(payload['author_id'])), timeout=5)

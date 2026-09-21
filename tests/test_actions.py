@@ -153,3 +153,24 @@ class ActionTests(unittest.TestCase):
         text=self.live.command(CommandRequest('1','20','98','delete',arguments=(self.identity,'1')),'900',True)
         self.assertIsInstance(text,actions.ActionText)
         self.assertFalse(actions.history(self.engine,self.identity))
+
+
+class MessageComparisonTests(unittest.TestCase):
+    def test_missing_or_changed_roles_are_not_message_edits(self):
+        event = MessageEvent('1','10','100','50','Original text.',1000,author_role_ids=('77',))
+        evidence = {**event.to_dict(), 'version': event.version, 'fingerprint': 'saved'}
+        for roles in ((), ('88',), ('77','88')):
+            fetched = replace(event, author_role_ids=roles)
+            self.assertNotEqual(event.version, fetched.version)
+            self.assertEqual(actions.message_changes(evidence, fetched), ())
+
+    def test_every_message_field_still_participates_in_comparison(self):
+        event = MessageEvent('1','10','100','50','Original text.',1000,author_role_ids=('77',))
+        changes = dict(guild_id='2',channel_id='11',message_id='101',author_id='51',
+                       content='Edited replacement.',created_at=1001,edited_at=1002,
+                       is_bot=True,is_webhook=True,is_thread=True,has_attachments=True)
+        for field, value in changes.items():
+            with self.subTest(field=field):
+                result = actions.message_changes(event.to_dict(), replace(event, **{field:value}))
+                self.assertEqual(result, (field,))
+                self.assertNotIn('Edited replacement', str(result))

@@ -211,6 +211,85 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         record=self.adapter.store.db.execute('SELECT * FROM action_attempts_v1').fetchone()
         self.assertEqual(record['automatic'],1);self.assertEqual(record['outcome'],'done')
 
+    async def missing_roles_screening(self, *, exemption=True):
+        self.adapter.policy=replace(self.adapter.policy,classifier=replace(self.adapter.policy.classifier,exempt_role_ids=('77',)))
+        self.adapter.live=LiveSession(Engine(self.adapter.policy,self.adapter.store))
+        self.adapter.store.set_setting('role_exemption_enabled',exemption)
+        self.toggle('deletion');self.toggle('auto-delete')
+        raw=response('sensitive_request');raw['answers']['context']['choice']='other'
+        raw['answers']['context']['probabilities']={key:1. if key=='other' else 0. for key in raw['answers']['context']['probabilities']}
+        self.adapter.classifier=MessageScreener(self.adapter.live.engine,AsyncMock(return_value=raw),
+            on_result=lambda job:self.adapter.enqueue('screen_result',job))
+        message=self.message(100,10,guild=self.guild,content='Send me your wallet recovery phrase.')
+        message.channel=self.channels[10]
+        message.author.roles=[SimpleNamespace(id=1),SimpleNamespace(id=88)]
+        message.delete=AsyncMock();self.messages[100]=message
+        self.adapter.live.engine.process(snapshot(message))
+        # REST fetch has a User, while the saved gateway event had a Member.
+        message.author=SimpleNamespace(id=50,bot=False)
+        job=self.adapter.classifier.snapshot('100')
+        await self.adapter.classifier.evaluate_one(job)
+        await self.drain()
+        return message
+
+    async def test_manual_delete_accepts_missing_rest_roles(self):
+        self.pattern()
+        for message in self.messages.values():
+            message.author.roles=[SimpleNamespace(id=1),SimpleNamespace(id=88)]
+            self.adapter.process_evidence(snapshot(message))
+        incident=self.adapter.store.incidents()[0];payload=self.plan(incident)
+        for message in self.messages.values(): message.author=SimpleNamespace(id=50,bot=False)
+        result=await self.adapter.perform_action(payload)
+        self.assertIn('done',result)
+        for message in self.messages.values(): message.delete.assert_awaited_once()
+
+    async def test_auto_delete_accepts_missing_rest_roles_when_exemption_off(self):
+        message=await self.missing_roles_screening(exemption=False)
+        message.delete.assert_awaited_once()
+        self.guild.fetch_member.assert_not_awaited()
+
+    async def test_auto_delete_checks_fresh_nonexempt_membership(self):
+        message=await self.missing_roles_screening()
+        message.delete.assert_awaited_once()
+        self.guild.fetch_member.assert_awaited_once_with(50)
+
+    async def test_newly_exempt_member_is_not_auto_deleted(self):
+        self.member.roles=[SimpleNamespace(id=77)]
+        message=await self.missing_roles_screening()
+        message.delete.assert_not_awaited()
+        self.assertIn('currently has an exempt role',' '.join(self.channel.send.call_args.args[0].split()))
+
+    async def test_unavailable_membership_is_not_auto_deleted(self):
+        self.guild.fetch_member.side_effect=TimeoutError
+        message=await self.missing_roles_screening()
+        message.delete.assert_not_awaited()
+        self.assertIn('roles unavailable',' '.join(self.channel.send.call_args.args[0].split()))
+
+    async def test_wrong_member_identity_is_not_auto_deleted(self):
+        self.member.id=51
+        message=await self.missing_roles_screening()
+        message.delete.assert_not_awaited()
+
+    async def test_pause_during_fresh_member_fetch_blocks_auto_delete(self):
+        async def fetched(identity):
+            self.adapter.live.engine.set_paused(True)
+            return self.member
+        self.guild.fetch_member.side_effect=fetched
+        message=await self.missing_roles_screening()
+        message.delete.assert_not_awaited()
+
+    async def test_timeout_accepts_missing_rest_roles_and_still_fetches_member(self):
+        self.pattern()
+        for message in self.messages.values():
+            message.author.roles=[SimpleNamespace(id=88)]
+            self.adapter.process_evidence(snapshot(message))
+        payload=self.plan(self.adapter.store.incidents()[0],'timeout')
+        for message in self.messages.values(): message.author=SimpleNamespace(id=50,bot=False)
+        result=await self.adapter.perform_action(payload)
+        self.assertIn('Timeout: done',result)
+        self.guild.fetch_member.assert_awaited_once_with(50)
+        self.member.timeout.assert_awaited_once()
+
     def interaction(self,custom,identity=800,author=98,message=700):
         return SimpleNamespace(id=identity,type=discord.InteractionType.component,data={'component_type':2,'custom_id':custom},
             guild_id=1,channel_id=20,user=SimpleNamespace(id=author,bot=False),
@@ -246,3 +325,26 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pending_page(self.adapter.live.engine)['total'],0)
         self.member.timeout.assert_not_awaited()
         for message in self.messages.values(): message.delete.assert_not_awaited()
+
+
+class RealDiscordMessageTests(unittest.TestCase):
+    def test_gateway_member_and_rest_user_have_same_message_identity(self):
+        guild=Mock(spec=discord.Guild)
+        guild.id=1;guild.get_member.return_value=None;guild.get_role.return_value=None
+        guild.default_role=SimpleNamespace(id=1)
+        channel=Mock(spec=discord.TextChannel);channel.id=10;channel.guild=guild
+        state=Mock()
+        state.store_user.side_effect=lambda data, **kw:discord.User(state=state,data=data)
+        payload=dict(id='1551344942083866777',type=0,content='Send me your wallet recovery phrase.',
+            attachments=[],embeds=[],edited_timestamp=None,tts=False,pinned=False,mention_everyone=False,
+            mentions=[],mention_roles=[],author=dict(id='50',username='test',discriminator='0',avatar=None))
+        gateway=discord.Message(state=state,channel=channel,data={**payload,
+            'member':dict(roles=[],joined_at='2026-09-01T00:00:00+00:00',deaf=False,mute=False,flags=0)})
+        rest=discord.Message(state=state,channel=channel,data=payload)
+        self.assertIsInstance(gateway.author,discord.Member)
+        self.assertIsInstance(rest.author,discord.User)
+        saved,fetched=snapshot(gateway),snapshot(rest)
+        self.assertEqual(saved.author_role_ids,('1',))
+        self.assertEqual(fetched.author_role_ids,())
+        self.assertNotEqual(saved.version,fetched.version)
+        self.assertEqual(actions.message_changes(saved.to_dict(),fetched),())

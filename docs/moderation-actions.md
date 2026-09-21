@@ -1,3 +1,5 @@
+> **0.5.1 update:** the owner installed 0.5.0 and enabled deletion/auto-delete, but the preflight comparison falsely reported changed content. Use [the deletion fix](deletion-fix.md) to update while preserving current flags and budgets. The initial installation procedure below is retained for reference.
+
 # Moderation actions — 0.5.0
 
 Prepared September 21, 2026. This release adds message deletion, Dismiss, and staff-confirmed 10-minute timeouts. Automatic deletion is limited to fresh JEV `sensitive_request` results above **0.90**. There are no automatic timeouts, bans, kicks, escalating strikes, public warnings or DMs. No running profile was changed during development.
