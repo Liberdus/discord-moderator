@@ -1,5 +1,7 @@
 # JEV batch evaluation
 
+For the current concern classifier and automatic-deletion decision checks, use the new [44-case screening evaluation](screening-evaluation.md). The purpose-only batches below are historical and need no repeat run.
+
 The standalone runner evaluates synthetic examples with the real JEV API and prints one narrow summary. The original **context-v1** baseline contains ten examples. The owner has completed the baseline: ten valid responses, nine matches and one mixed-purpose review case. The [recorded results](#baseline-results--september-20-2026) below supersede the earlier pending-run status. The five-case precedence-v2 comparison is also complete: five valid responses, four matches and one ambiguous-fragment review case. See the [candidate results](#precedence-v2-results--september-20-2026). Neither run needs repeating now.
 
 It reuses the plugin's incident evidence builder, pinned model, transport and typed-response validator. The explicit suite selects either the original rubric or the candidate described below. Each example becomes a disposable three-channel repeat incident in memory. Expected labels and test names never enter the provider request. No real Discord messages are read, sent or changed.
