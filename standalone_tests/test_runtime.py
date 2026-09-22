@@ -46,8 +46,13 @@ def fake_client(service):
     async def close():
         stopped.set()
 
-    return SimpleNamespace(user=SimpleNamespace(id=99), login=AsyncMock(), connect=connect,
-                           close=close, get_channel=channels.get, channels=channels)
+    http = SimpleNamespace(get_guild_commands=AsyncMock(return_value=[]),
+                           bulk_upsert_guild_commands=AsyncMock(return_value=[]),
+                           get_global_commands=AsyncMock(return_value=[]),
+                           bulk_upsert_global_commands=AsyncMock(return_value=[]))
+    return SimpleNamespace(user=SimpleNamespace(id=99), application_id=99, http=http,
+                           login=AsyncMock(), connect=connect, close=close,
+                           get_channel=channels.get, channels=channels)
 
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):

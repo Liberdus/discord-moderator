@@ -16,7 +16,8 @@ from .secure_files import checked_directory, token_lock, write_private
 
 class SafeLogFilter(logging.Filter):
     EVENTS = frozenset(("starting", "connected", "disconnected", "stopped", "startup_failed",
-                        "runtime_failed", "background_failure", "shutdown_requested"))
+                        "runtime_failed", "background_failure", "shutdown_requested",
+                        "slash_commands_registered", "slash_registration_failed", "configuration_reload"))
 
     def filter(self, record):
         # Third-party transport logs can contain interaction URLs, tokens or
@@ -48,6 +49,7 @@ class StandaloneService(DiscordService):
         self.finished = asyncio.Event()
         self.shutdown_lock = asyncio.Lock()
         self.error_code = None
+        self.configuration_reload_pending = False
         self.logger = logging.getLogger("liberdus_moderator.service")
 
     def load_startup(self):
@@ -64,6 +66,29 @@ class StandaloneService(DiscordService):
 
     def jev_key(self):
         return self.credentials.get("jev")
+
+    async def register_application_commands(self):
+        from .slash_commands import sync_commands
+        try:
+            await asyncio.wait_for(sync_commands(self.client, self.policy), timeout=20)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.store.set_setting("slash_commands_state", "registration_failed")
+            self.logger.error("slash_registration_failed")
+        else:
+            self.store.set_setting("slash_commands_state", "registered")
+            self.logger.info("slash_commands_registered")
+
+    def save_configuration(self, proposed, interaction, operation, values):
+        from .remote_settings import persist_change
+        persist_change(self.home, self.store, self.policy, proposed, str(interaction.user.id),
+                       operation, values, str(interaction.id), self.live.engine._now())
+
+    def request_configuration_reload(self):
+        self.configuration_reload_pending = True
+        self.logger.info("configuration_reload")
+        self.finished.set()
 
     def _acquire_platform_lock(self, scope, token, description):
         self.owns_database_lock = True
@@ -110,6 +135,13 @@ class StandaloneService(DiscordService):
 
 
 async def serve(home):
+    while True:
+        result = await serve_once(home)
+        if result != 75:
+            return result
+
+
+async def serve_once(home):
     service = StandaloneService(home)
     loop = asyncio.get_running_loop()
     stopped = asyncio.Event()
@@ -140,7 +172,9 @@ async def serve(home):
         waiters.append(failure_waiter)
         await asyncio.wait((stop_waiter, failure_waiter), return_when=asyncio.FIRST_COMPLETED)
         service.logger.info("shutdown_requested")
-        return 2 if service.error_code else 0
+        if service.error_code:
+            return 2
+        return 75 if not stopped.is_set() and getattr(service, "configuration_reload_pending", False) else 0
     finally:
         for task in waiters:
             task.cancel()

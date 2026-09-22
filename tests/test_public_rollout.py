@@ -35,7 +35,7 @@ class PublicRolloutTests(unittest.TestCase):
         self.default.write_text('platforms:\n  discord:\n    enabled: false\n')
         self.local = self.profile / 'config.yaml'
         self.local.write_text('platforms:\n  discord:\n    enabled: false\n  liberdus_moderator:\n    enabled: false\n')
-        (self.profile / 'plugins/liberdus-moderator/plugin.yaml').write_text('name: liberdus-moderator\nversion: 0.6.1\n')
+        (self.profile / 'plugins/liberdus-moderator/plugin.yaml').write_text('name: liberdus-moderator\nversion: 0.7.0\n')
         self.lock = self.profile / 'state/moderation.lock'
         self.lock.touch()
         self.database = self.profile / 'state/moderation.sqlite3'

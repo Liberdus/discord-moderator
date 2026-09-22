@@ -1,7 +1,7 @@
 """Private commands for an adapter to invoke using authenticated Discord metadata.
 
-These are local handlers, not registered Discord slash commands. Never populate
-the identity envelope from message text or a model's output.
+These local handlers are shared by the message and slash-command transports.
+Never populate the identity envelope from message text or a model's output.
 """
 
 from dataclasses import dataclass, field

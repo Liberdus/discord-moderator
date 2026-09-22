@@ -184,7 +184,10 @@ class LiveSession:
                       "Timeout (staff): " + ("ON" if status["timeout_enabled"] else "OFF")]
             from .interaction_health import failure_lines
             lines += failure_lines(self.store)
-            return panel("Liberdus moderation", lines + ["Commands: !mod help"])
+            slash_state = self.store.get_setting("slash_commands_state")
+            if slash_state in ("registered", "registration_failed"):
+                lines += ["Slash commands: " + slash_state]
+            return panel("Liberdus moderation", lines + ["Commands: /mod help" if slash_state == "registered" else "Commands: !mod help"])
         if event.command in ("incident", "explain"):
             from .classification_view import format_incident
             # Preserve structured display sections and the durable revision binding.

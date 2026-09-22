@@ -1,4 +1,8 @@
-# Standalone moderation — 0.6.1
+# Standalone moderation — 0.7.0
+
+Use native `/mod` commands for moderation and `/mod config` for approved settings.
+The standalone runner registers its menu at startup and removes obsolete global
+commands from its own bot application. See [commands and configuration](slash-commands.md).
 
 The bot can run without Hermes. The standalone runner and optional Hermes wrapper
 share the same Discord service, moderation engine, JEV screening, card layouts,
@@ -99,7 +103,7 @@ Build the wheel, then run the installer from the reviewed environment:
 ```bash
 .venv/bin/python -m pip wheel --no-deps . --wheel-dir dist
 sudo .venv/bin/liberdus-moderator install-service \
-  --wheel dist/liberdus_discord_moderator-0.6.1-py3-none-any.whl --start
+  --wheel dist/liberdus_discord_moderator-0.7.0-py3-none-any.whl --start
 ```
 
 The installer fetches the pinned Discord/JEV HTTP dependencies from PyPI and runs
@@ -276,7 +280,9 @@ Blindly restoring the older source database can lose newer audit records.
 
 ## Updates and checks
 
-### Update an existing 0.6.0 system service to 0.6.1
+<a id="update-an-existing-060-system-service-to-061"></a>
+
+### Update an existing 0.6.x system service to 0.7.0
 
 On the destination VPS with the existing checkout (the reported host uses
 `/root/discord-moderator`), build the new wheel before stopping the service:
@@ -288,7 +294,7 @@ git pull --ff-only
 sudo systemctl stop liberdus-moderator
 sudo /opt/liberdus-moderator/venv/bin/python -m pip --isolated install \
   --no-deps --force-reinstall \
-  dist/liberdus_discord_moderator-0.6.1-py3-none-any.whl
+  dist/liberdus_discord_moderator-0.7.0-py3-none-any.whl
 sudo systemctl reset-failed liberdus-moderator
 sudo systemctl start liberdus-moderator
 sudo systemctl status liberdus-moderator --no-pager
@@ -302,6 +308,8 @@ package files under `/opt/liberdus-moderator`; retain any unrelated local code
 changes separately before updating. Configuration, credentials and the database
 remain in place. Do not rerun the fresh installer or setup wizard. Startup runs
 `doctor` with the actual service credentials before connecting to Discord.
+Then look for `slash_commands_registered` and use `/mod help` in the private staff
+channel. See [the menu and registration troubleshooting](slash-commands.md).
 
 Keep code separate from instance data. Stop the bot, take a private consistent
 database/configuration backup, install the reviewed new wheel into its code

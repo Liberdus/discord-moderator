@@ -1557,3 +1557,53 @@ the owner must install the wheel there to replace the manual patch. No productio
 credentials, database, gateway or system service were changed during this fix.
 The original Hermes moderation profile on this VPS remains disabled from the
 owner-authorized cutover; keep it disabled.
+
+## 10.55 Native slash commands and approved configuration edits (0.7.0)
+
+The owner requested replacement of the stale Hermes slash menu, native moderation
+commands without requiring `!mod`, and commands to change IDs. The standalone
+runner owns its dedicated application's menu: after verifying bot identity it
+registers guild `/mod`, then clears obsolete global registrations. Matching
+schemas skip writes, failed guild registration does not clear global commands,
+and failure is reported with fixed safe diagnostics while moderation continues.
+Other apps and other guild registrations are untouched. Hermes plugin startup
+does not synchronize this menu. The prefix remains a compatibility fallback.
+
+Nineteen moderation subcommands reuse authenticated commands, serialized work,
+durable receipts, current-evidence deletion previews and bound confirmations.
+Incident/explain replies are shared staff cards with durable button bindings;
+other slash replies are private. Pause/off bypass backlog and cancel queued
+older enables. Lost acknowledgements, stale generations and unauthorized users
+cannot enqueue actions. The approved automatic-deletion rule is unchanged.
+
+Nine config subcommands provide show/history plus edits for monitored/staff
+channels, operators, category boundaries, exempt roles, and spending/call caps.
+Selectors or raw IDs are accepted, including removal of deleted targets. Mutations
+require a configured operator and fresh Manage Server/owner authorization;
+read-only metadata checks validate privacy, membership, target scope and bot
+permissions. Self-removal, an empty monitor list, arbitrary keys/settings, and
+policy-identity changes are refused. Atomic private policy saves record the actor
+and requested/saved state. Reload blocks admission and invalidates old evidence
+before reopening the service with disk settings. History, action switches and
+usage counters survive. Lost replies or partial audit failure still trigger reload
+when disk policy changed. Secrets remain exclusively in the credential backend.
+
+Validation: **508 core/setup + 231 integration + 27 standalone = 766 tests**.
+The installed wheel additionally passed 27 standalone, 33 setup/service/credential,
+and 6 configuration tests in an environment without Hermes or the source package
+on Python's import path. Tests use synthetic state and mocked Discord transport;
+no live JEV calls, message actions or command-registration writes were used.
+Coverage includes real pinned SDK HTTP routes/models, command schemas and raw IDs,
+authorization, private replies, shared card binding, fresh deletion previews,
+priority pause, failed acknowledgement, external edits, interrupted saves, and
+reopening without losing counters. Existing systemd 255 checks stay intact.
+
+The wheel's 56 source modules match the reviewed checkout. Artifact:
+`dist/liberdus_discord_moderator-0.7.0-py3-none-any.whl`; SHA-256:
+`9a4b205a46bd88db0da5b1aa7a764871e5032a51d50fec3eabdc270b873d3b07`.
+Current manifests, updater checks and setup/update guides use 0.7.0.
+
+The active standalone VPS was not accessed or updated here. Install the wheel
+there using `docs/slash-commands.md`; command registration happens at startup.
+No production credentials, DB, gateway, Discord registrations or system service
+were modified during implementation. The old moderation profile remains disabled.

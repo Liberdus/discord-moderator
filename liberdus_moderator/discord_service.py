@@ -22,6 +22,7 @@ from .member_roles import checked_membership, membership_roles
 from .storage import Store
 from .health import HealthMonitor
 from .review_display import ReviewMessage
+from .slash_commands import SlashCommands
 
 REVIEW_BUTTONS = {"liberdus:assess:v1:" + label: label for label in ("needs-attention", "looks-okay", "unsure")}
 LEGACY_REVIEW_BUTTONS = {"liberdus:review:v1:" + label for label in ("promotion", "not-promotion", "unsure")}
@@ -106,6 +107,8 @@ class PilotClient(discord.Client):
         self.adapter.channel_changed(channel)
 
     async def on_interaction(self, interaction):
+        if await self.adapter.receive_slash_command(interaction):
+            return
         await self.adapter.receive_review_click(interaction)
 
     async def on_raw_message_edit(self, payload):
@@ -123,7 +126,7 @@ class PilotClient(discord.Client):
         await self.adapter.fail("callback_failure")
 
 
-class DiscordService(ActionTransport):
+class DiscordService(SlashCommands, ActionTransport):
     def initialize_service(self):
         self.client = None
         self.store = self.live = self.policy = None
@@ -170,6 +173,7 @@ class DiscordService(ActionTransport):
             await asyncio.wait_for(self.client.login(token), timeout=20)
             if str(self.client.user.id) != self.policy.bot_user_id:
                 raise ValueError("Bot identity mismatch")
+            await self.register_application_commands()
             if self.policy.classifier.mode == "shadow":
                 from .classifier import ShadowClassifier
                 self.classifier = ShadowClassifier(self.live.engine, self.evaluate_jev, active=self.classifier_active)
@@ -217,6 +221,11 @@ class DiscordService(ActionTransport):
 
     def make_client(self):
         return PilotClient(self)
+
+    async def register_application_commands(self):
+        # The dedicated standalone runner owns its command menu. Hermes hosts
+        # keep their existing application registration lifecycle.
+        pass
 
     def policy_current(self):
         """Recheck disk policy and activation before privileged controls."""
@@ -410,7 +419,8 @@ class DiscordService(ActionTransport):
         self._mark_disconnected()
 
     def in_scope(self, guild_id, channel_id):
-        if not (self.online and guild_id is not None and str(guild_id) == self.policy.guild_id
+        if not (self.online and not getattr(self, "configuration_reload_pending", False)
+                and guild_id is not None and str(guild_id) == self.policy.guild_id
                 and str(channel_id) in (*self.policy.monitored_channel_ids, *self.policy.command_channel_ids)):
             return False
         if self.guarded_scope():
@@ -426,7 +436,7 @@ class DiscordService(ActionTransport):
                 or (event.command in {"deletion", "auto-delete", "timeout"}
                     and event.arguments == ("off",)))
 
-    def apply_stop_control(self, message_id, event):
+    def apply_stop_control(self, message_id, event, *, notify_channel=True):
         # No await or evidence queue: acknowledged stop state is durable before
         # the next action guard. Only four fixed restrictive operations qualify.
         if (self.live is None or not self.online or self.closing
@@ -447,22 +457,26 @@ class DiscordService(ActionTransport):
         while not self.queue.empty():
             item = self.queue.get_nowait()
             _, kind, value = item
-            superseded = (kind == "command" and
+            superseded = (kind in {"command", "slash_command"} and
                 ((event.command == "pause" and value[1].command == "resume")
                  or (value[1].command == event.command and value[1].arguments == ("on",))))
             if superseded:
                 # Terminal receipt: duplicate gateway delivery of this older
                 # enable must not undo a newer stop after queue invalidation.
                 with self.store.transaction():
+                    receipt = str(value[0].id) if kind == "slash_command" else value[0]
                     self.store.db.execute("INSERT OR IGNORE INTO command_receipts VALUES(?,?)",
-                                          (value[0], self.live.engine._now()))
+                                          (receipt, self.live.engine._now()))
                     self.store.db.execute("DELETE FROM command_receipts WHERE message_id IN ("
                         "SELECT message_id FROM command_receipts ORDER BY created_at DESC LIMIT -1 OFFSET 5000)")
+                self.cancel_queued_interaction(kind, value)
             else:
                 queued.append(item)
             self.queue.task_done()
         for item in queued:
             self.queue.put_nowait(item)
+        if not notify_channel:
+            return content
         self.stop_replies[event.command] = (message_id, event)
         if not self.stop_reply_pending:
             try:
@@ -470,6 +484,8 @@ class DiscordService(ActionTransport):
                 self.stop_reply_pending = True
             except asyncio.QueueFull:
                 self.coverage_gap("queue_full")
+
+        return content
 
     def enqueue(self, kind, value):
         if kind == "command" and self.stop_control(value[1]):
@@ -481,7 +497,7 @@ class DiscordService(ActionTransport):
             self.cancel_queued_interaction(kind, value)
             self.coverage_gap("queue_full")
 
-    async def defer_interaction(self, interaction):
+    async def defer_interaction(self, interaction, *, ephemeral=True):
         # Reserve before the acknowledgement await, bounding concurrent receives
         # as well as queued/in-flight cancellation notices to 200 interactions.
         if self.closing or not self.online:
@@ -505,7 +521,7 @@ class DiscordService(ActionTransport):
         try:
             # Send immediately. Discord enforces the initial response deadline;
             # allow a slow receipt to arrive after Discord accepted the request.
-            await asyncio.wait_for(interaction.response.defer(ephemeral=True, thinking=True), timeout=5)
+            await asyncio.wait_for(interaction.response.defer(ephemeral=ephemeral, thinking=True), timeout=5)
         except asyncio.CancelledError:
             self.deferred_interactions.pop(key, None)
             raise
@@ -525,7 +541,7 @@ class DiscordService(ActionTransport):
         return True
 
     def cancel_queued_interaction(self, kind, value):
-        if kind not in {"review_click", "action_confirm"}:
+        if kind not in {"review_click", "action_confirm", "slash_command", "slash_config"}:
             return
         interaction = value[0]
         record = self.deferred_interactions.get(id(interaction))
@@ -605,7 +621,9 @@ class DiscordService(ActionTransport):
     async def interaction_notice(self, interaction, content, *, deferred=False):
         from .interaction_health import record
         proposal = getattr(content, "proposal", None)
-        view = confirm_buttons(proposal, content) if proposal else card_view(content)
+        target = getattr(content, "review_target", None)
+        view = (confirm_buttons(proposal, content) if proposal else
+                assessment_buttons(self.live.engine, content=content) if target else card_view(content))
         interrupted = False
         try:
             if deferred:
@@ -619,6 +637,8 @@ class DiscordService(ActionTransport):
                 sent = None
             if proposal and sent is not None:
                 actions.bind(self.live.engine, proposal, str(sent.id))
+            if target and sent is not None:
+                self.live.save_review_prompt(str(sent.id), str(interaction.channel_id), target)
             record(self.live.engine, interaction, 'replied')
         except asyncio.CancelledError:
             interrupted = True
@@ -857,6 +877,8 @@ class DiscordService(ActionTransport):
                                 self.auto_delete_candidates.add(identity)
                     elif kind == "action_confirm":
                         await self.handle_action_confirmation(value)
+                    elif kind in {"slash_command", "slash_config"}:
+                        await self.handle_slash_command(value, configuration=kind == "slash_config")
                     elif kind == "edit":
                         self.processing_evidence = True
                         try:

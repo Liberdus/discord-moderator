@@ -85,7 +85,7 @@ def wizard(home, *, ask=input, secret_prompt=None, output=print, reader_factory=
     bits = (1 << 10) | (1 << 11) | (1 << 13) | (1 << 16)
     application_id = application["id"]
     validate_id(application_id, "application_id")
-    output(f"Bot invite: https://discord.com/oauth2/authorize?client_id={application_id}&scope=bot&permissions={bits}")
+    output(f"Bot invite: https://discord.com/oauth2/authorize?client_id={application_id}&scope=bot%20applications.commands&permissions={bits}")
     guilds = get("/users/@me/guilds?limit=200")
     for index, guild in enumerate(guilds, 1):
         output(f"  {index}. {terminal(guild.get('name', 'server'))} (ID {guild['id']})")

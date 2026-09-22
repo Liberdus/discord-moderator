@@ -1,6 +1,18 @@
 # Continue Liberdus moderation work as hermes
 
-Latest checkpoint: **0.6.1 systemd credential fix**. The owner supplied evidence
+Latest checkpoint: **0.7.0 native slash commands and configuration**. The owner
+requested a repository-specific Discord menu instead of the inherited Hermes
+commands and `!mod`, plus editing IDs. The standalone runner registers `/mod` in
+its configured guild and then clears its own application's obsolete global
+commands. It reuses the existing moderation/action pipeline and offers a guarded
+`/mod config` menu for IDs and spending/call caps. See `docs/slash-commands.md`
+for the destination VPS wheel update and command reference; BUILD_PLAN 10.55
+records review and tests. All 766 tests passed; 66 relevant tests also passed
+against the installed wheel without Hermes. Publication does not update the
+other VPS or its Discord registrations. The new menu appears when that service
+runs the release. Keep the old moderator profile on this host disabled.
+
+Previous checkpoint: **0.6.1 systemd credential fix**. The owner supplied evidence
 from the other VPS: systemd 255 exposes root-owned `0550` credential directories
 and `0440` files on a read-only mount; 0.6.0 rejected these, and the deployed copy
 was hand-patched. This commit fixes the systemd backend in the repository, with

@@ -1,6 +1,6 @@
 # New VPS with a fresh moderation database
 
-This procedure installs standalone 0.6.1 on another VPS using the existing
+This procedure installs standalone 0.7.0 on another VPS using the existing
 Discord bot and JEV credentials. The owner chose a fresh database: do not run
 `migrate` or copy the old database. Existing Discord permissions stay with the
 bot. No new bot application or invite is needed for the existing Liberdus server.
@@ -28,7 +28,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install '.[discord]'
 .venv/bin/python -m pip wheel --no-deps . --wheel-dir dist
 sudo .venv/bin/liberdus-moderator install-service \
-  --wheel dist/liberdus_discord_moderator-0.6.1-py3-none-any.whl
+  --wheel dist/liberdus_discord_moderator-0.7.0-py3-none-any.whl
 ```
 
 The repository is private. During `gh auth login`, open the displayed URL on your
@@ -152,22 +152,24 @@ sudo journalctl -u liberdus-moderator -n 40 --no-pager
 
 Every service start runs the installation checks with its systemd credentials
 before connecting. Successful output includes `Installation checks passed` and
-then `connected`. If a check fails, keep the new service stopped while fixing
+then `slash_commands_registered` and `connected`. If a check fails, keep the new service stopped while fixing
 the reported issue. A shell `doctor` invocation does not inherit the service's
 runtime credentials; use the service startup check and journal.
 
 In Discord's **bot-mod** channel, send these individually:
 
 ```text
-!mod status
-!mod summary
-!mod auto-delete
+/mod status
+/mod summary
+/mod auto-delete
 ```
 
 Verify connected, unpaused, JEV screening enabled, deletion ON, auto-delete ON,
 timeout OFF, and the >=0.90 four-concern rule. These commands do not perform a
 paid screening test or delete anything. Setup verifies a JEV key is configured;
 its provider authentication is checked when normal live screening occurs.
+Use `/mod config show` to view IDs and limits. Later edits can use Discord's
+selectors or raw IDs; see [slash commands and configuration](slash-commands.md).
 
 ## What starting fresh means
 

@@ -2,10 +2,11 @@ Earlier Hermes release: **0.5.16** introduced cards for all moderation replies, 
 
 # Liberdus Discord Moderator
 
-**Standalone 0.6.1:** run the moderation bot without Hermes, with a guided channel
-setup wizard, protected credentials, installation diagnostics, and a dedicated
-Linux service option. Version 0.6.1 fixes systemd 255 credential mount permissions;
-see the [existing-service update instructions](docs/standalone.md#update-an-existing-060-system-service-to-061).
+**Standalone 0.7.0:** native `/mod` commands replace the old Hermes menu. Authorized
+staff can manage moderation and edit channel/user/role IDs and spending caps in
+Discord. Keys remain protected on the VPS. See [slash commands and the existing-service
+update guide](docs/slash-commands.md). This release includes the 0.6.1 systemd 255
+credential-mount fix, guided setup, and a dedicated Linux service option.
 See [standalone setup, credential handling, and migration](docs/standalone.md).
 For the existing Liberdus bot, follow [new VPS setup with a fresh database](docs/new-vps.md),
 including channel IDs and the old-to-new service switch.
