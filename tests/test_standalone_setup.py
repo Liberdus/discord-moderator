@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -116,8 +117,123 @@ class SecureFilesTests(unittest.TestCase):
                 provider.get("discord")
         runtime = checked_directory(self.home / "runtime", create=True)
         write_private(runtime / "discord-token", "runtime-key")
+        (runtime / "discord-token").chmod(0o440)
+        runtime.chmod(0o550)
+        self.addCleanup(runtime.chmod, 0o700)
         self.assertEqual(Credentials(self.home, backend="systemd", directory=runtime).get("discord"), "runtime-key")
         self.assertNotIn(DISCORD_SECRET, repr(portable))
+
+    def systemd_fixture(self):
+        runtime = self.home / "runtime"
+        runtime.mkdir(mode=0o700)
+        credential = runtime / "discord-token"
+        credential.write_text(DISCORD_SECRET)
+        credential.chmod(0o440)
+        runtime.chmod(0o550)
+        self.addCleanup(runtime.chmod, 0o700)
+        return runtime, credential, Credentials(self.home, backend="systemd", directory=runtime)
+
+    def test_systemd_read_only_mount_is_accepted_without_permission_changes(self):
+        runtime, credential, provider = self.systemd_fixture()
+        with patch("os.chmod", side_effect=AssertionError("read-only mount")), \
+                patch("os.chown", side_effect=AssertionError("read-only mount")):
+            self.assertEqual(provider.get("discord"), DISCORD_SECRET)
+        self.assertEqual(stat.S_IMODE(runtime.stat().st_mode), 0o550)
+        self.assertEqual(stat.S_IMODE(credential.stat().st_mode), 0o440)
+
+    def test_systemd_accepts_root_and_service_ownership_only(self):
+        runtime, credential, provider = self.systemd_fixture()
+        original_lstat, original_fstat = Path.lstat, os.fstat
+
+        def ownership(info, uid, gid):
+            fields = list(info)
+            fields[4:6] = [uid, gid]
+            return os.stat_result(fields)
+
+        # Exercise root:root even as an unprivileged test user. Actual file
+        # opening, file modes and link checks remain real; only IDs are mocked.
+        service_uid, service_gid = 12001, 12002
+        for directory_uid, directory_gid, file_uid, file_gid, accepted in (
+            (0, 0, 0, 0, True),
+            (service_uid, service_gid, service_uid, service_gid, True),
+            (0, service_gid, service_uid, 0, True),
+            (service_uid, 0, 0, service_gid, True),
+            (12003, 0, 0, 0, False),
+            (0, 12003, 0, 0, False),
+            (0, 0, 12003, 0, False),
+            (0, 0, 0, 12003, False),
+        ):
+            def directory_stat(path):
+                info = original_lstat(path)
+                return ownership(info, directory_uid, directory_gid) if path == runtime else info
+            def file_stat(fd):
+                return ownership(original_fstat(fd), file_uid, file_gid)
+            with self.subTest(directory=(directory_uid, directory_gid), file=(file_uid, file_gid)), \
+                    patch("os.getuid", return_value=service_uid), patch("os.getgid", return_value=service_gid), \
+                    patch.object(Path, "lstat", directory_stat), patch("os.fstat", side_effect=file_stat):
+                if accepted:
+                    self.assertEqual(provider.get("discord"), DISCORD_SECRET)
+                else:
+                    with self.assertRaises(SetupError):
+                        provider.get("discord")
+
+    def test_systemd_rejects_unsafe_directory_modes(self):
+        runtime, credential, provider = self.systemd_fixture()
+        for mode in (0o555, 0o551, 0o770, 0o570, 0o750, 0o1550):
+            with self.subTest(mode=oct(mode)):
+                runtime.chmod(mode)
+                with self.assertRaises(SetupError):
+                    provider.get("discord")
+
+    def test_systemd_rejects_world_readable_writable_or_executable_files(self):
+        runtime, credential, provider = self.systemd_fixture()
+        for mode in (0o644, 0o444, 0o660, 0o460, 0o640, 0o600, 0o450, 0o540, 0o1440):
+            with self.subTest(mode=oct(mode)):
+                credential.chmod(mode)
+                with self.assertRaises(SetupError):
+                    provider.get("discord")
+
+    def test_systemd_still_rejects_links_and_nonregular_files(self):
+        runtime, credential, provider = self.systemd_fixture()
+        runtime.chmod(0o750)  # Permit fixture mutation only, before each read.
+        target = runtime / "target"
+        credential.rename(target)
+        credential.symlink_to(target)
+        runtime.chmod(0o550)
+        with self.assertRaises(OSError):
+            provider.get("discord")
+        runtime.chmod(0o750)
+        credential.unlink()
+        os.link(target, credential)
+        runtime.chmod(0o550)
+        with self.assertRaises(SetupError):
+            provider.get("discord")
+        runtime.chmod(0o750)
+        credential.unlink()
+        os.mkfifo(credential, 0o440)
+        runtime.chmod(0o550)
+        with self.assertRaises(SetupError):
+            provider.get("discord")
+        redirect = self.home / "redirect"
+        redirect.symlink_to(runtime, target_is_directory=True)
+        with self.assertRaises(SetupError):
+            Credentials(self.home, backend="systemd", directory=redirect).get("discord")
+
+    def test_portable_credentials_remain_owner_only(self):
+        portable = Credentials(self.home)
+        portable.put("discord", DISCORD_SECRET)
+        credential = self.home / "credentials/discord-token"
+        for mode in (0o600, 0o400):
+            credential.chmod(mode)
+            self.assertEqual(portable.get("discord"), DISCORD_SECRET)
+        credential.chmod(0o440)
+        with self.assertRaises(SetupError):
+            portable.get("discord")
+        credential.chmod(0o400)
+        credential.parent.chmod(0o550)
+        self.addCleanup(credential.parent.chmod, 0o700)
+        with self.assertRaises(SetupError):
+            portable.get("discord")
 
     def test_locks_exclude_another_holder_and_release_after_failure(self):
         path = self.home / "active.lock"

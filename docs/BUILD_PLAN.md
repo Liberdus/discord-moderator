@@ -1519,3 +1519,41 @@ Publication succeeded on `main` in commit `0d90728`. A follow-up read-only check
 confirmed the repository is private; the fresh-VPS guide therefore includes
 GitHub CLI browser authentication for the SSH setup account before cloning.
 Those GitHub credentials are not given to the moderation service.
+
+## 10.54 Systemd credential mount compatibility (0.6.1)
+
+The owner reported that the new Ubuntu 24.04/systemd 255 VPS mounts service
+credentials as root:root directories `0550` and files `0440`, read-only, with
+access available to the unprivileged service. Both encrypted and plain loads
+have that layout. The installed 0.6.0 package had been edited in place because
+the repository's owner-only runtime checks rejected it before Discord login.
+
+The repository now accepts the exact systemd modes when owners are root or the
+service user and groups are root or the service's primary group. The directory
+must be real; files must be regular, single-link and opened without following
+symlinks. World access, write bits, executable files, untrusted identities and
+special modes remain rejected. The portable backend keeps its previous
+owner-only behavior. No credential-mount chmod/chown, service privilege change,
+encryption downgrade, moderation policy change or dependency update is involved.
+
+Six new tests cover actual `0550`/`0440` files without permission-changing calls,
+root/service identity combinations (mocked IDs for unprivileged tests), unsafe
+modes/identities, symlinks/hard links/FIFOs, and portable isolation. The existing
+systemd test fixture now uses the correct read-only modes. A 0.6.0-to-0.6.1
+Hermes updater regression preserves settings/history. Current release checks and
+package/plugin manifests consistently use 0.6.1.
+
+Validation passed: 502 core/setup + 230 Hermes/Discord integration + 9 standalone
+tests = **741**. All 33 setup/service/credential tests also passed against an
+installed 0.6.1 wheel without the repository on Python's import path. The final
+wheel's 54 source modules match the tested checkout; only its README metadata
+changed after the installed-wheel tests. Artifact:
+`dist/liberdus_discord_moderator-0.6.1-py3-none-any.whl`; SHA-256:
+`ffba131453a65cba05e86110abe12c5c810511da6f1288502e833b1ef2de178b`.
+
+The standalone guide records the reported Ubuntu mount layout and exact existing
+service wheel-update commands. The other VPS was not accessed or updated here;
+the owner must install the wheel there to replace the manual patch. No production
+credentials, database, gateway or system service were changed during this fix.
+The original Hermes moderation profile on this VPS remains disabled from the
+owner-authorized cutover; keep it disabled.

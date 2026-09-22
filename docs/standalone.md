@@ -1,4 +1,4 @@
-# Standalone moderation — 0.6.0
+# Standalone moderation — 0.6.1
 
 The bot can run without Hermes. The standalone runner and optional Hermes wrapper
 share the same Discord service, moderation engine, JEV screening, card layouts,
@@ -8,8 +8,8 @@ not depend on Hermes and does not load its profiles or secrets.
 This release supports Linux with Python 3.11 or newer. One installation serves
 one Discord server. Windows service support and a web dashboard are not included.
 
-The existing Liberdus deployment remains on Hermes 0.5.16 until an explicit
-cutover. Installing or testing this repository does not migrate that deployment.
+The original Liberdus Hermes profile was disabled for the new-VPS cutover.
+Installing or testing this repository does not start or migrate that profile.
 To move to another VPS without retaining the database, use the
 [fresh database VPS guide](new-vps.md). It includes the current Liberdus setup
 values and keeps the destination stopped until the old moderator is disabled.
@@ -99,7 +99,7 @@ Build the wheel, then run the installer from the reviewed environment:
 ```bash
 .venv/bin/python -m pip wheel --no-deps . --wheel-dir dist
 sudo .venv/bin/liberdus-moderator install-service \
-  --wheel dist/liberdus_discord_moderator-0.6.0-py3-none-any.whl --start
+  --wheel dist/liberdus_discord_moderator-0.6.1-py3-none-any.whl --start
 ```
 
 The installer fetches the pinned Discord/JEV HTTP dependencies from PyPI and runs
@@ -154,6 +154,17 @@ ownership, broad permissions, symbolic/hard links, oversized files, and malforme
 values. It does not execute dotenv text or borrow a process environment key.
 
 System installations use [systemd credentials](https://systemd.io/CREDENTIALS/).
+On the reported Ubuntu 24.04 host with systemd 255, the runtime credential mount
+is root-owned with directory mode `0550` and file mode `0440`, for both encrypted
+and plain `LoadCredential`. Version 0.6.1 accepts this read-only layout. Directory
+and file owners must be root or the service user; groups must be root or the
+service's primary group. The systemd backend requires exact directory mode `0550`
+and file mode `0440`, regular single-link files, and no symlinks. It rejects other
+groups, world access, write bits, and executable files. These rules are specific
+to runtime systemd credentials; portable files keep their owner-only checks.
+The service still runs as `liberdus-mod`, without capabilities. Do not run it as
+root or try to chmod/chown the read-only credential mount.
+
 The encrypted mode uses `systemd-creds` with the local host key. This protects an
 encrypted credential copy when the host key is not also exposed. It is not a
 guarantee against a compromised host, root administrator, or compromised bot
@@ -264,6 +275,33 @@ actions, retain that newer database and reconcile its history before rollback.
 Blindly restoring the older source database can lose newer audit records.
 
 ## Updates and checks
+
+### Update an existing 0.6.0 system service to 0.6.1
+
+On the destination VPS with the existing checkout (the reported host uses
+`/root/discord-moderator`), build the new wheel before stopping the service:
+
+```bash
+cd /root/discord-moderator
+git pull --ff-only
+.venv/bin/python -m pip wheel --no-deps . --wheel-dir dist
+sudo systemctl stop liberdus-moderator
+sudo /opt/liberdus-moderator/venv/bin/python -m pip --isolated install \
+  --no-deps --force-reinstall \
+  dist/liberdus_discord_moderator-0.6.1-py3-none-any.whl
+sudo systemctl reset-failed liberdus-moderator
+sudo systemctl start liberdus-moderator
+sudo systemctl status liberdus-moderator --no-pager
+sudo journalctl -u liberdus-moderator -n 40 --no-pager
+```
+
+Run each step only if the previous command succeeds. Adjust the checkout path
+for another setup account. The pinned runtime dependencies are unchanged from
+0.6.0, so this update uses `--no-deps`. Installing the wheel replaces hand-edited
+package files under `/opt/liberdus-moderator`; retain any unrelated local code
+changes separately before updating. Configuration, credentials and the database
+remain in place. Do not rerun the fresh installer or setup wizard. Startup runs
+`doctor` with the actual service credentials before connecting to Discord.
 
 Keep code separate from instance data. Stop the bot, take a private consistent
 database/configuration backup, install the reviewed new wheel into its code

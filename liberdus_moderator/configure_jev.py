@@ -169,8 +169,8 @@ def configure_screening(profile, operation="screen"):
         regular_owned(path)
     manifest = yaml.safe_load(manifest_path.read_text())
     if (manifest.get("name") != "liberdus-moderator" or manifest.get("version") != __version__
-            or __version__ != "0.6.0"):
-        raise ValueError("Install the reviewed 0.6.0 update first")
+            or __version__ != "0.6.1"):
+        raise ValueError("Install the reviewed 0.6.1 update first")
     default = yaml.safe_load(default_path.read_text())
     if default.get("platforms", {}).get("discord", {}).get("enabled") is not False:
         raise ValueError("Default stock Discord must remain disabled")

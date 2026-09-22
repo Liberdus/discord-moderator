@@ -1,5 +1,19 @@
 # Continue Liberdus moderation work as hermes
 
+Latest checkpoint: **0.6.1 systemd credential fix**. The owner supplied evidence
+from the other VPS: systemd 255 exposes root-owned `0550` credential directories
+and `0440` files on a read-only mount; 0.6.0 rejected these, and the deployed copy
+was hand-patched. This commit fixes the systemd backend in the repository, with
+trusted root/service owner and primary-group checks and exact read-only modes.
+Portable owner-only rules remain unchanged. All 741 tests passed; 33 setup and
+credential tests also passed against the installed wheel. Follow the existing
+service upgrade in `docs/standalone.md` to replace the other host's local patch.
+No access to that VPS or live installation change was performed for this fix.
+The old `liberdus-mod` profile here was disabled at the owner's request at 16:01
+UTC September 22; its database lock was released and the shared gateway's other
+integrations reconnected. Keep it disabled. Earlier publication/deployment notes
+below are historical; read BUILD_PLAN section 10.54 for the current release.
+
 Checkpoint: 2026-09-22, standalone 0.6.0 reviewed for owner-authorized publication; live Hermes plugin remains 0.5.16. Read `docs/new-vps.md`, `docs/standalone.md` and BUILD_PLAN sections 10.52–10.53 first. Release 0.5.16 was previously deployed and verified as hermes. Read `docs/all-cards.md`, `docs/auto-delete-scope.md`, `docs/interaction-recovery.md`, `docs/staff-channel-category.md`, `docs/live-screening-diagnostics.md`, `docs/deletion-notices.md`, `docs/review-layout.md` and the latest section of `docs/BUILD_PLAN.md`. Repo: https://github.com/Liberdus/discord-moderator.git, branch `main`. GitHub authentication works and the separate checkout is `/home/hermes/discord-moderator`, originally cloned at `fef4903`. This checkpoint accompanies publication of the accumulated 0.5.10–0.6.0 source, tests and documentation; inspect Git status before continuing. The developer checkout is `/home/developer/projects/discord-moderator`; do not assume the other user's home is accessible.
 
 ## Immediate task

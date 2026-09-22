@@ -1,10 +1,11 @@
-Latest deployed: **0.5.16** uses cards for all moderation replies, including status, summaries, confirmations and private results. [Card formatting](docs/all-cards.md) · [Auto-delete rule](docs/auto-delete-scope.md) · [Confirmation recovery](docs/interaction-recovery.md) · [Current handoff](docs/HERMES_HANDOFF.md).
+Earlier Hermes release: **0.5.16** introduced cards for all moderation replies, including status, summaries, confirmations and private results. [Card formatting](docs/all-cards.md) · [Auto-delete rule](docs/auto-delete-scope.md) · [Confirmation recovery](docs/interaction-recovery.md) · [Current handoff](docs/HERMES_HANDOFF.md).
 
 # Liberdus Discord Moderator
 
-**Standalone 0.6.0:** run the moderation bot without Hermes, with a guided channel
+**Standalone 0.6.1:** run the moderation bot without Hermes, with a guided channel
 setup wizard, protected credentials, installation diagnostics, and a dedicated
-Linux service option. The existing Liberdus deployment is still on Hermes 0.5.16.
+Linux service option. Version 0.6.1 fixes systemd 255 credential mount permissions;
+see the [existing-service update instructions](docs/standalone.md#update-an-existing-060-system-service-to-061).
 See [standalone setup, credential handling, and migration](docs/standalone.md).
 For the existing Liberdus bot, follow [new VPS setup with a fresh database](docs/new-vps.md),
 including channel IDs and the old-to-new service switch.

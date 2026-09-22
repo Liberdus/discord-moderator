@@ -46,10 +46,18 @@ def read_private(path, *, limit=65536, root_owned=False):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
         info = os.fstat(stream.fileno())
-        owners = (0, os.getuid()) if root_owned else (os.getuid(),)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid not in owners
-                or info.st_mode & 0o077 or info.st_nlink != 1):
-            raise SetupError("Files must be private, regular, owned files without hard links (permissions 600 or 400).")
+        if root_owned:
+            # Only the systemd credential backend opts into this read-only
+            # group-readable layout. No chmod/chown on the runtime mount.
+            access_ok = (info.st_uid in (0, os.getuid())
+                         and info.st_gid in (0, os.getgid())
+                         and stat.S_IMODE(info.st_mode) == 0o440)
+            error = "Service credential files require trusted ownership and group, permissions 440, and no links."
+        else:
+            access_ok = info.st_uid == os.getuid() and not info.st_mode & 0o077
+            error = "Files must be private, regular, owned files without hard links (permissions 600 or 400)."
+        if not stat.S_ISREG(info.st_mode) or not access_ok or info.st_nlink != 1:
+            raise SetupError(error)
         data = stream.read(limit + 1)
     if len(data) > limit:
         raise SetupError("A local file exceeds its size limit.")

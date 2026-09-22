@@ -54,9 +54,13 @@ class Credentials:
             directory = Path(raw)
             if not directory.is_absolute() or any(p.is_symlink() for p in (directory, *directory.parents)):
                 raise SetupError("Invalid service credential directory.")
-            info = directory.stat()
+            info = directory.lstat()
+            # systemd 255 can expose a root-owned, read-only credential mount
+            # with group r-x. Accept only the exact mode and trusted identities;
+            # portable directories still use checked_directory's private rule.
             if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.getuid())
-                    or info.st_mode & 0o077):
+                    or info.st_gid not in (0, os.getgid())
+                    or stat.S_IMODE(info.st_mode) != 0o550):
                 raise SetupError("Service credentials have unsafe directory permissions.")
         return validate_secret(read_private(directory / NAMES[name], limit=4096,
                                             root_owned=self.backend == "systemd").decode("ascii").rstrip("\n"))
