@@ -67,7 +67,7 @@ def handle_command(engine: Engine, request: CommandRequest):
         return {"authorized": False, "ok": False, "error": "not_authorized", "ai_calls": 0}
     name, arguments = request.command, request.arguments
     result = {"authorized": True, "ok": True, "ai_calls": 0, "public_actions": []}
-    if name == "help" and not arguments:
+    if name in ("help", "connection") and not arguments:
         result["data"] = {}
     elif name == "exempt-role" and arguments in ((), ("on",), ("off",)):
         if arguments:
@@ -88,8 +88,13 @@ def handle_command(engine: Engine, request: CommandRequest):
         try:
             if name == "timeout" and len(arguments) != 2:
                 raise ValueError("Invalid timeout arguments")
-            result["data"] = propose(engine, arguments[0], arguments[1], name, request.user_id,
-                                     request.channel_id, arguments[2] if len(arguments) == 3 else None)
+            if name == "delete":
+                from .manual_delete import request_delete
+                result["data"] = request_delete(engine, arguments[0], arguments[1], request.user_id,
+                                                request.channel_id, arguments[2] if len(arguments) == 3 else None)
+            else:
+                result["data"] = propose(engine, arguments[0], arguments[1], name, request.user_id,
+                                         request.channel_id)
         except (ValueError, KeyError, TypeError, sqlite3.Error) as error:
             from .actions import ActionError
             return {**result, "ok": False, "error": str(error) if isinstance(error, ActionError) else "action_unavailable_check_id_and_revision"}

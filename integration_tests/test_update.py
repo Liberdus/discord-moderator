@@ -34,7 +34,7 @@ class UpdateTests(unittest.TestCase):
         shutil.copytree(ROOT / "liberdus_moderator", self.target / "liberdus_moderator",
                         ignore=shutil.ignore_patterns("__pycache__"))
         self.manifest = self.target / "plugin.yaml"
-        self.manifest.write_text(self.manifest.read_text().replace("0.5.8", "0.3.4"))
+        self.manifest.write_text(self.manifest.read_text().replace("0.5.9", "0.3.4"))
         (self.target / "previous-version-marker").write_text("keep in backup")
         (self.home / "hermes-agent").symlink_to(SOURCE)
         self.config = self.profile / "config.yaml"
@@ -68,7 +68,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(result["isolated_selftest"], "9/9 passed")
         self.assertFalse(result["platform_enabled"])
         self.assertFalse(result["gateway_restarted"])
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.5.8")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"], "0.5.9")
         self.assertEqual((Path(result["plugin_backup"]) / "previous-version-marker").read_text(), "keep in backup")
         self.assertEqual(self.preserved(), before)
         with self.assertRaisesRegex(ValueError, "requires an existing version"):
@@ -88,15 +88,15 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse(result["database_changed"])
         self.assertFalse(result["policy_changed"])
         self.assertFalse(result["token_read"])
-        self.assertEqual(result["version"], "0.5.8")
+        self.assertEqual(result["version"], "0.5.9")
 
     def test_current_035_pilot_can_upgrade(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.3.5"))
-        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.8")
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.9")
 
     def test_current_042_pilot_can_upgrade(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.4.2"))
-        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.8")
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.9")
 
     def test_050_actions_enabled_update_preserves_policy_flags_and_budget(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.5.0"))
@@ -105,19 +105,19 @@ class UpdateTests(unittest.TestCase):
                 daily_budget_microusd=1000000,total_budget_microusd=4000000,exempt_role_ids=('77',)))
         self.policy.write_text(policy_text(policy))
         before=self.preserved()
-        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.8")
+        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.9")
         self.assertEqual(self.preserved(),before)
 
     def test_051_can_upgrade_preserving_existing_state(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.5.1"))
         before=self.preserved()
-        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.8")
+        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.9")
         self.assertEqual(self.preserved(),before)
 
     def test_052_can_upgrade_preserving_existing_state(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.5.2"))
         before=self.preserved()
-        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.8")
+        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.9")
         self.assertEqual(self.preserved(),before)
 
     def test_053_can_upgrade_preserving_actions_and_runtime_state(self):
@@ -127,7 +127,7 @@ class UpdateTests(unittest.TestCase):
                 daily_budget_microusd=1000000,total_budget_microusd=4000000,exempt_role_ids=('77',)))
         self.policy.write_text(policy_text(policy))
         before=self.preserved()
-        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.8")
+        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.9")
         self.assertEqual(self.preserved(),before)
 
     def test_054_upgrade_preserves_live_flags_budget_keys_and_pending_state(self):
@@ -150,7 +150,7 @@ class UpdateTests(unittest.TestCase):
             connection.execute("INSERT INTO pending_review VALUES('saved-incident',3)")
         before=self.preserved()
         result=update(self.bundle,self.home)
-        self.assertEqual(result["version"],"0.5.8")
+        self.assertEqual(result["version"],"0.5.9")
         self.assertEqual(result["isolated_selftest"],"9/9 passed")
         self.assertEqual(self.preserved(),before)
         self.assertFalse(result["database_changed"])
@@ -180,14 +180,14 @@ class UpdateTests(unittest.TestCase):
                 store.set_setting(key,value)
         before=self.preserved()
         result=update(self.bundle,self.home)
-        self.assertEqual(result["version"],"0.5.8")
+        self.assertEqual(result["version"],"0.5.9")
         self.assertEqual(result["isolated_selftest"],"9/9 passed")
         self.assertEqual(self.preserved(),before)
         self.assertFalse(result["policy_changed"])
         self.assertFalse(result["database_changed"])
         self.assertFalse(result["token_read"])
         self.assertFalse(result["gateway_restarted"])
-        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"],"0.5.8")
+        self.assertEqual(yaml.safe_load(self.manifest.read_text())["version"],"0.5.9")
 
     def test_056_public_policy_upgrades_without_widening_scope_or_resetting_state(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4","0.5.6"))
@@ -195,7 +195,7 @@ class UpdateTests(unittest.TestCase):
                        excluded_category_ids=('1318586868136415333',))
         self.policy.write_text(policy_text(policy).replace('included_category_ids = []\n',''))
         before=self.preserved()
-        self.assertEqual(update(self.bundle,self.home)['version'],'0.5.8')
+        self.assertEqual(update(self.bundle,self.home)['version'],'0.5.9')
         self.assertEqual(self.preserved(),before)
 
     def test_057_category_policy_upgrades_without_changing_live_settings(self):
@@ -204,13 +204,23 @@ class UpdateTests(unittest.TestCase):
                          included_category_ids=('100',), excluded_category_ids=('200',))
         self.policy.write_text(policy_text(policy).replace('allow_public_deletion = false\n', ''))
         before = self.preserved()
-        self.assertEqual(update(self.bundle, self.home)['version'], '0.5.8')
+        self.assertEqual(update(self.bundle, self.home)['version'], '0.5.9')
         self.assertEqual(self.preserved(), before)
+
+    def test_058_public_deletion_upgrade_preserves_policy_flags_and_usage(self):
+        self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.5.8"))
+        policy=replace(Config.from_file(self.policy),schema_version=2,actions_enabled=True,
+            allow_public_monitored_channels=True,allow_public_deletion=True,
+            included_category_ids=('100',),excluded_category_ids=('200',))
+        self.policy.write_text(policy_text(policy))
+        before=self.preserved()
+        self.assertEqual(update(self.bundle,self.home)['version'],'0.5.9')
+        self.assertEqual(self.preserved(),before)
 
     def test_missing_new_runtime_module_refuses_update_without_replacing_plugin(self):
         before=self.preserved()
         original=self.bundle.read_bytes()
-        for module in ('health', 'summary'):
+        for module in ('health', 'summary', 'manual_delete', 'connection_health'):
             with self.subTest(module=module):
                 self.bundle.write_bytes(original)
                 with zipfile.ZipFile(self.bundle) as archive:
@@ -226,7 +236,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_current_041_pilot_can_upgrade(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.4.1"))
-        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.8")
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.9")
 
     def test_live_040_screening_update_preserves_settings(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.4.0"))
@@ -235,12 +245,12 @@ class UpdateTests(unittest.TestCase):
             max_daily_calls=10000,max_total_calls=100000,daily_budget_microusd=1000000,total_budget_microusd=4000000))
         self.policy.write_text(policy_text(policy))
         before=self.preserved()
-        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.8")
+        self.assertEqual(update(self.bundle,self.home)["version"],"0.5.9")
         self.assertEqual(self.preserved(),before)
 
     def test_original_030_pilot_can_also_upgrade(self):
         self.manifest.write_text(self.manifest.read_text().replace("0.3.4", "0.3.0"))
-        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.8")
+        self.assertEqual(update(self.bundle, self.home)["version"], "0.5.9")
 
     def test_enabled_or_still_running_pilot_is_refused(self):
         original = self.config.read_text()

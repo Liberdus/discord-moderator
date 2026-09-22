@@ -47,6 +47,10 @@ def initialize(engine):
             revision INTEGER NOT NULL, kind TEXT NOT NULL, target_id TEXT NOT NULL,
             actor TEXT NOT NULL, automatic INTEGER NOT NULL, started_at REAL NOT NULL,
             finished_at REAL, outcome TEXT NOT NULL, detail TEXT NOT NULL)''')
+        store.db.execute('''CREATE TABLE IF NOT EXISTS action_evidence_v1(
+            action_key TEXT PRIMARY KEY REFERENCES action_attempts_v1(key) ON DELETE CASCADE,
+            source_revision INTEGER NOT NULL, source_hash TEXT NOT NULL,
+            refreshed_at REAL NOT NULL, evidence_hash TEXT NOT NULL, evidence_json TEXT NOT NULL)''')
         store.db.execute("UPDATE action_proposals_v1 SET state='expired' WHERE state='pending'")
         store.db.execute("UPDATE action_attempts_v1 SET outcome='uncertain',detail='restart' WHERE outcome='sending'")
         store.set_setting('actions_schema', 1)
@@ -115,6 +119,9 @@ def automatic_candidate(engine, incident):
 
 
 def revalidate(engine, payload):
+    if payload.get("refreshed") is True:
+        from .manual_delete import revalidate as revalidate_manual
+        return revalidate_manual(engine, payload)
     if (payload['epoch'] != engine.store.get_setting('action_epoch', 0)
             or payload['policy_hash'] != engine.config.policy_hash
             or not 0 <= engine._now() - payload['created_at'] <= 60):
@@ -133,14 +140,6 @@ def revalidate(engine, payload):
 
 def propose(engine, identity, revision, kind, actor, channel_id, message_id=None):
     payload = plan(engine, identity, int(revision), kind, actor, channel_id, message_id=message_id)
-    token = uuid4().hex
-    store = engine.store
-    with store.transaction():
-        store.db.execute("DELETE FROM action_proposals_v1 WHERE expires_at < ? OR state!='pending'", (engine._now(),))
-        if store.db.execute('SELECT count(*) FROM action_proposals_v1').fetchone()[0] >= 100:
-            raise ActionError('Too many outstanding confirmations.')
-        store.db.execute('INSERT INTO action_proposals_v1 VALUES(?,?,?,NULL,?,\'pending\',?)',
-                         (token, actor, channel_id, engine._now()+60, json.dumps(payload)))
     title = 'Confirm message deletion' if kind == 'delete' else 'Confirm 10-minute timeout'
     lines = ["ACTION", "--------------------------------", f"Revision: {revision}", "Member ID", payload['author_id']]
     lines += ([f"Delete {len(payload['evidence'])} message(s).", 'Deletion cannot be undone.'] if kind == 'delete'
@@ -149,6 +148,19 @@ def propose(engine, identity, revision, kind, actor, channel_id, message_id=None
     for index, item in enumerate(payload['evidence'], 1):
         url = f"https://discord.com/channels/{engine.config.guild_id}/{item['channel_id']}/{item['message_id']}"
         text += f"\n[Message {index}: {item['message_id']}](<{url}>)"
+    return store_proposal(engine, payload, text)
+
+
+def store_proposal(engine, payload, text):
+    kind, actor, channel_id = payload['kind'], payload['actor'], payload['channel_id']
+    token = uuid4().hex
+    store = engine.store
+    with store.transaction():
+        store.db.execute("DELETE FROM action_proposals_v1 WHERE expires_at < ? OR state!='pending'", (engine._now(),))
+        if store.db.execute('SELECT count(*) FROM action_proposals_v1').fetchone()[0] >= 100:
+            raise ActionError('Too many outstanding confirmations.')
+        store.db.execute('INSERT INTO action_proposals_v1 VALUES(?,?,?,NULL,?,\'pending\',?)',
+                         (token, actor, channel_id, engine._now()+60, json.dumps(payload)))
     return ActionText(text, {'token': token, 'kind': kind, 'actor': actor, 'channel_id': channel_id})
 
 
@@ -190,6 +202,11 @@ def reserve(engine, payload, target_id):
             raise ActionError('Automatic deletion limit reached; staff review required.')
         engine.store.db.execute('INSERT INTO action_attempts_v1 VALUES(?,?,?,?,?,?,?,?,NULL,\'sending\',\'\')',
             (key, payload['incident_id'], payload['revision'], kind, target_id, payload['actor'], int(payload['automatic']), now))
+        if payload.get('refreshed') is True:
+            selected = [item for item in payload['evidence'] if item['message_id'] == target_id]
+            engine.store.db.execute('INSERT INTO action_evidence_v1 VALUES(?,?,?,?,?,?)',
+                (key, payload['revision'], payload['source_hash'], payload['refreshed_at'],
+                 digest(selected), json.dumps(selected, ensure_ascii=True)))
     return key
 
 

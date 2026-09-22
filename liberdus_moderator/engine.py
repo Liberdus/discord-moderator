@@ -202,6 +202,7 @@ class Engine:
             raise ValueError("Invalid pause transition for the configured mode")
         with self.store.transaction():
             if paused != self.store.get_setting("paused", False):
+                self.store.set_setting("action_epoch", self.store.get_setting("action_epoch", 0) + 1)
                 self._invalidate_window(self._now(), "paused" if paused else "needs_revalidation")
             self.store.set_setting("paused", paused)
 

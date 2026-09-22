@@ -26,6 +26,44 @@ def confirm_buttons(proposal):
 
 
 class ActionTransport:
+    async def prepare_manual_delete(self, content):
+        from .manual_delete import DeleteRequest, guard, checked_refresh, confirmation
+        if not isinstance(content, DeleteRequest):
+            return content
+        request = content.request
+        generation = self.generation
+        def check():
+            if (generation != self.generation or not self.online or self.closing
+                    or not self.queue.empty() or not self.classifier_active()):
+                raise actions.ActionError('Connection, policy or incoming evidence changed. Click Delete again.')
+            self.checked_channel(request['channel_id'], sending=True)
+            guard(self.live.engine, request)
+        try:
+            check()
+            refreshed = []
+            for item in request['evidence']:
+                channel = self.checked_channel(item['channel_id'])
+                if not channel.permissions_for(channel.guild.me).manage_messages:
+                    raise actions.ActionError('Missing Manage Messages in the monitored channel.')
+                message = await asyncio.wait_for(channel.fetch_message(int(item['message_id'])), timeout=5)
+                from .hermes_adapter import snapshot
+                refreshed.append(snapshot(message))
+                check()
+                self.checked_channel(item['channel_id'])
+            payload = checked_refresh(self.live.engine, request, refreshed)
+            return confirmation(self.live.engine, payload)
+        except discord.NotFound:
+            text = 'A selected message is already gone. No deletion or confirmation created.'
+        except discord.Forbidden:
+            text = 'Cannot read a selected message. Check the bot permissions. No deletion requested.'
+        except actions.ActionError as error:
+            text = str(error)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            text = 'Could not verify current message content. No deletion requested; try Delete again.'
+        return panel('Deletion unavailable', [text])
+
     async def receive_action_confirmation(self, interaction):
         data = interaction.data
         identity = data.get('custom_id', '') if isinstance(data, dict) else ''

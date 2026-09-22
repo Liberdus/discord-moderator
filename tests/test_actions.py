@@ -175,7 +175,8 @@ class ActionTests(unittest.TestCase):
             self.assertLess(len(text),1900)
         self.command('deletion',('on',))
         text=self.live.command(CommandRequest('1','20','98','delete',arguments=(self.identity,'1')),'900',True)
-        self.assertIsInstance(text,actions.ActionText)
+        from liberdus_moderator.manual_delete import DeleteRequest
+        self.assertIsInstance(text, DeleteRequest)
         self.assertFalse(actions.history(self.engine,self.identity))
 
 

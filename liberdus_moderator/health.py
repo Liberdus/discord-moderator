@@ -238,6 +238,8 @@ class HealthMonitor:
     def _content(self, kind, reasons, gaps, state):
         title = {'warning': 'Moderation coverage alert', 'interruption': 'Moderation coverage interruption',
                  'recovery': 'Moderation screening recovered'}[kind]
+        if kind == 'interruption' and set(gaps) == {'disconnect'}:
+            title = 'Discord connection restored'
         lines = ['SCREENING HEALTH', '-' * 32]
         if kind == 'recovery':
             lines += ['A valid live JEV check completed.', 'No current screening blocker was detected.']

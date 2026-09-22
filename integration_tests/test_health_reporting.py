@@ -117,7 +117,7 @@ class HealthReportingTests(unittest.IsolatedAsyncioTestCase):
         await self.adapter.ready()
         await self.adapter.flush_health()
         text = self.channel.send.call_args.args[0]
-        self.assertIn('coverage interruption',text)
+        self.assertIn('Discord connection restored',text)
         self.assertIn('Discord disconnected',text)
         self.assertIn('not backfilled',' '.join(text.split()))
         self.assertNotIn('screening recovered',text)

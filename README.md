@@ -1,4 +1,4 @@
-Latest prepared: **0.5.8** adds an explicit deletion opt-in for the seven approved Community channels. Existing Delete/Auto-delete commands become available after installation; public timeouts remain blocked. The automatic rule stays limited to fresh credential requests scoring above 0.90. [Install scoped public deletion](docs/public-deletion.md). Deployment is not yet confirmed. The prior [observation rollout](docs/public-observation.md) remains the default without opt-in.
+Latest prepared: **0.5.9** fixes staff Delete on historical reports by fetching current Discord content for a new confirmation. It also adds `!mod connection` and filtered reconnect diagnostics. [Install and behavior](docs/manual-delete-refresh.md) · [Continue as hermes in Codex CLI](docs/HERMES_HANDOFF.md). Deployment is pending; the reported disconnect cause still needs owner log evidence. Existing scope and action settings are preserved.
 
 # Liberdus Discord Moderator
 

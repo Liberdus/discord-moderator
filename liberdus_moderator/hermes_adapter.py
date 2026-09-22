@@ -93,7 +93,7 @@ class PilotClient(discord.Client):
         await self.adapter.ready()
 
     async def on_resumed(self):
-        await self.adapter.ready()
+        await self.adapter.ready(resumed=True)
 
     async def on_disconnect(self):
         self.adapter.lost_connection()
@@ -374,7 +374,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             return
         self.refresh_scope()
 
-    async def ready(self):
+    async def ready(self, *, resumed=False):
         if self.closing:
             return
         try:
@@ -393,6 +393,9 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
             self.refresh_scope()
             if self.online:
                 return
+            with contextlib.suppress(Exception):
+                from .connection_health import record
+                record(self.live.engine, 'resumed' if resumed else 'new_session')
             self.coverage_gap("reconnect")
             self.online = True
             self._mark_connected()
@@ -424,6 +427,11 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
     def lost_connection(self):
         if self.closing or not self.online:
             return
+        with contextlib.suppress(Exception):
+            from .connection_health import record
+            ws = getattr(self.client, 'ws', None)
+            code = getattr(ws, '_close_code', None) or getattr(getattr(ws, 'socket', None), 'close_code', None)
+            record(self.live.engine, 'disconnected', code)
         self.online = False
         self.ready_event.clear()
         self.coverage_gap("disconnect")
@@ -869,6 +877,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
                         self.next_command_at = now + 1
                         content = self.live.command(value[1], value[0], self.online)
                         if content:
+                            content = await self.prepare_manual_delete(content)
                             content = await self.refresh_assessment_messages(content, value[1])
                             try:
                                 target = getattr(content, "review_target", None)
@@ -893,6 +902,7 @@ class ModerationAdapter(ActionTransport, BasePlatformAdapter):
                         self.next_command_at = now + 1
                         content = self.live.command(event, "interaction:" + str(interaction.id), self.online)
                         if content:
+                            content = await self.prepare_manual_delete(content)
                             content = await self.refresh_assessment_messages(content, event)
                         await self.interaction_notice(interaction, content or "This interaction was already processed or is no longer authorized.",
                                                       deferred=True)

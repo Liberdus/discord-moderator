@@ -1,5 +1,7 @@
 # Scoped public deletion — 0.5.8
 
+Historical release guide. For the subsequent fix allowing fresh staff confirmation from older reports, see [0.5.9 manual Delete refresh](manual-delete-refresh.md).
+
 The owner reports public JEV screening is working and requested deletion in the seven approved Community channels. Version 0.5.7 deliberately required observation-only public policies, so the existing `!mod deletion on` command was refused. Version 0.5.8 adds an explicit `allow_public_deletion` opt-in alongside `actions_enabled`, retaining ordinary observation as the default. Installation on the owner gateway is not yet confirmed.
 
 The fixed owner helper accepts only the active rollout containing these seven channel IDs. It never expands monitoring:
