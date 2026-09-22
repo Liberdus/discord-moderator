@@ -56,10 +56,13 @@ class RuleSettings:
     same_channel_window_seconds: int = 30
     same_channel_min_messages: int = 4
     notification_cooldown_seconds: int = 300
+    review_alert_role_id: str | None = None
     blocked_domains: tuple[str, ...] = ()
     approved_crossposts: tuple[CrosspostException, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.review_alert_role_id is not None:
+            validate_id(self.review_alert_role_id, "review_alert_role_id")
         for name in ("repeat_window_seconds", "repeat_min_chars", "same_channel_window_seconds", "notification_cooldown_seconds"):
             _positive_int(getattr(self, name), name)
         _positive_int(self.repeat_min_channels, "repeat_min_channels", 2)
@@ -255,6 +258,8 @@ class Config:
     def policy_hash(self) -> str:
         # Bind persisted decisions to the entire effective configuration, including scope.
         data = asdict(self)
+        if self.rules.review_alert_role_id is None:
+            del data["rules"]["review_alert_role_id"]  # Opt-in alerts preserve existing policy hashes when off.
         if not self.explicit_channel_scope:
             del data["explicit_channel_scope"]  # Preserve all existing policy hashes.
         if not self.allow_public_deletion:

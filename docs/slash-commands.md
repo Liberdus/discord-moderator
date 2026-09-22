@@ -1,4 +1,4 @@
-# Native Discord commands — 0.7.0
+# Native Discord commands — 0.7.1
 
 Discord stores application commands separately from the bot's installed code.
 Reusing the same application/token does not remove the Hermes menu. The standalone
@@ -25,7 +25,7 @@ git pull --ff-only
 sudo systemctl stop liberdus-moderator
 sudo /opt/liberdus-moderator/venv/bin/python -m pip --isolated install \
   --no-deps --force-reinstall \
-  dist/liberdus_discord_moderator-0.7.0-py3-none-any.whl
+  dist/liberdus_discord_moderator-0.7.1-py3-none-any.whl
 sudo systemctl reset-failed liberdus-moderator
 sudo systemctl start liberdus-moderator
 sudo systemctl status liberdus-moderator --no-pager
@@ -94,6 +94,7 @@ ownership.** Keys and arbitrary file/settings paths are never accepted.
 | `/mod config operator` | Add/remove an authorized human staff member |
 | `/mod config category` | Add/remove an included or excluded category boundary |
 | `/mod config exempt-role` | Add/remove a role eligible for the exemption switch |
+| `/mod config alert-role` | Set/off a role ping for flagged reviews below 0.90; five-minute cooldown |
 | `/mod config budget` | Daily and lifetime JEV caps in USD |
 | `/mod config call-limits` | Daily and lifetime JEV call caps |
 
@@ -111,6 +112,7 @@ Examples using Discord's option fields:
 /mod config category action:add boundary:excluded category:Committers
 /mod config exempt-role action:add role:@Trusted
 /mod config budget daily:1 lifetime:4
+/mod config alert-role action:set role:@committers
 ```
 
 Valid edits save the private policy file, record the actor, and reconnect the bot
@@ -133,3 +135,6 @@ Discord cannot edit credentials, bot/server identity, provider endpoints/models,
 storage paths, or the fixed automatic-deletion threshold. Manage secrets using
 the VPS's private setup/credential tools. The approved four-concern **≥0.90** rule,
 context exclusions and fresh-evidence checks remain unchanged.
+
+See [Committers review alerts](review-alerts.md) for setup, role permissions and
+cooldown behavior. Alerts are off until a role is selected.

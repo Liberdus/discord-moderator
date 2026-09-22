@@ -18,6 +18,7 @@ class PublicScopeConfigTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 config = policy(schema_version=schema)
                 legacy = asdict(config)
+                del legacy['rules']['review_alert_role_id']  # Absent in the captured legacy schema.
                 del legacy['explicit_channel_scope']
                 del legacy['allow_public_deletion'], legacy['allow_public_monitored_channels'], legacy['excluded_category_ids'], legacy['included_category_ids']
                 if schema == 1:
@@ -58,6 +59,7 @@ class PublicScopeConfigTests(unittest.TestCase):
         self.assertNotEqual(base.policy_hash,config.policy_hash)
         self.assertNotEqual(config.policy_hash,replace(config,included_category_ids=('100',)).policy_hash)
         prior=asdict(base); del prior['allow_public_deletion'], prior['included_category_ids'], prior['explicit_channel_scope']; del prior['classifier']['exempt_role_ids']
+        del prior['rules']['review_alert_role_id']
         expected=hashlib.sha256(json.dumps(prior,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
         self.assertEqual(base.policy_hash,expected)
         for values in (('0',),('abc',),('100','100'),('200',),[True],'100'):

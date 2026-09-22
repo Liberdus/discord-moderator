@@ -58,6 +58,9 @@ COMMANDS = {
 SETTINGS = {
     "show": ("Show editable settings and IDs", []),
     "history": ("Show recent configuration change records", []),
+    "alert-role": ("Set the role pinged for new flagged reviews below 0.90, or turn pings off", [
+        option("action", "Set or disable review pings", choices=[("Set", "set"), ("Off", "off")]),
+        *target("role", "Role to notify in the private staff channel", 8)]),
     "monitor": ("Add or remove a monitored text channel", [CHANGE, *target("channel", "Text channel", 7, channel_types=[0])]),
     "staff-channel": ("Change the private staff command/report channel", target("channel", "Private staff text channel", 7, channel_types=[0])),
     "operator": ("Add or remove an authorized human moderator", [CHANGE, *target("user", "Server member", 6)]),
@@ -158,6 +161,12 @@ def parse(data):
         raise SetupError("A required command option is missing.")
     selections = {"monitor": "channel", "staff-channel": "channel", "operator": "user",
                   "category": "category", "exempt-role": "role"}
+    if group and name == "alert-role":
+        if values["action"] == "off":
+            if "role" in values or "id" in values:
+                raise SetupError("Choose Off without a role or ID.")
+        else:
+            selections[name] = "role"
     if group and name in selections:
         field = selections[name]
         if (field in values) == ("id" in values):
@@ -177,6 +186,7 @@ def help_card():
         "`/mod config show` · `/mod config history`",
         "Edit IDs: `/mod config monitor`, `staff-channel`, `operator`, `category`, `exempt-role`.",
         "Edit caps: `/mod config budget` · `/mod config call-limits`.",
+        "Review pings: `/mod config alert-role` (below 0.90; five-minute cooldown).",
         "Use the private staff channel and an authorized operator account.",
         "Configuration edits also require Manage Server (or server ownership).",
         "Keys and bot/server identity are configured on the VPS. Timeout remains subject to policy.",

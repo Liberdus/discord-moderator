@@ -59,6 +59,12 @@ class SchemaTests(unittest.TestCase):
                                      ("config" if config else None, name, values))
 
     def test_raw_ids_support_removing_deleted_targets_without_allowing_ambiguous_input(self):
+        self.assertEqual(parse(payload("alert-role", {"action": "set", "id": "5"}, config=True)),
+                         ("config", "alert-role", {"action": "set", "role": "5"}))
+        self.assertEqual(parse(payload("alert-role", {"action": "off"}, config=True)),
+                         ("config", "alert-role", {"action": "off"}))
+        with self.assertRaises(SetupError):
+            parse(payload("alert-role", {"action": "off", "role": "5"}, config=True))
         self.assertEqual(parse(payload("monitor", {"action": "remove", "id": "123"}, config=True)),
                          ("config", "monitor", {"action": "remove", "channel": "123"}))
         self.assertEqual(parse(payload("operator", {"action": "remove", "id": "123"}, config=True)),
@@ -151,6 +157,35 @@ class SlashRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.service.next_command_at = 0
         self.assertTrue(await self.service.receive_slash_command(click))
         await asyncio.wait_for(self.service.queue.join(), timeout=4)
+
+    async def test_review_ping_allows_only_selected_role_and_survives_failed_delivery_without_retry(self):
+        await self.service.disconnect()
+        policy = load_policy(self.home)
+        policy = replace(policy, rules=replace(policy.rules, review_alert_role_id="5"))
+        write_private(self.home / "moderation.toml", policy_text(policy), replace=True)
+        self.service = StandaloneService(self.home)
+        self.service.make_client = lambda: runtime.fake_client(self.service)
+        self.assertTrue(await self.service.connect())
+        channel = self.service.client.channels[20]
+        role = SimpleNamespace(id=5, mentionable=True)
+        channel.guild.get_role = lambda identity: role if identity == 5 else None
+        prior = channel.permissions_for.side_effect
+        channel.permissions_for.side_effect = lambda member: (SimpleNamespace(view_channel=True) if member is role else prior(member))
+        channel.send.side_effect = OSError('synthetic uncertain send')
+        from liberdus_moderator.review_display import ReviewMessage
+        review = ReviewMessage('Review with @everyone <@98> <@&6>', 'Staff assessment', 'Actions', 'Reference')
+        with self.assertRaises(OSError):
+            await self.service.emit('20', review, 'first', reviewable=True, alert_role='5')
+        first = channel.send.call_args.kwargs
+        self.assertFalse(first['silent'])
+        self.assertEqual(first['allowed_mentions'].to_dict(), {'parse': [], 'roles': [5]})
+        self.assertIn('<@&5>', str(first['view'].to_components()))
+        channel.send.side_effect = None
+        await self.service.emit('20', review, 'second', reviewable=True, alert_role='5')
+        self.assertTrue(channel.send.call_args.kwargs['silent'])
+        self.assertEqual(channel.send.call_args.kwargs['allowed_mentions'].to_dict()['parse'], [])
+        await self.service.emit('20', 'Reopened review', 'third', reviewable=True)
+        self.assertTrue(channel.send.call_args.kwargs['silent'])
 
     async def test_status_help_and_pause_resume_work_without_message_prefix(self):
         for index, name in enumerate(("help", "status", "pause", "resume")):

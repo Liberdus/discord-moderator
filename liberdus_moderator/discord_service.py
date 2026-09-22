@@ -710,7 +710,7 @@ class DiscordService(SlashCommands, ActionTransport):
         except asyncio.QueueFull:
             await self.interaction_notice(interaction, "Moderation is busy. No review saved; try again shortly.", deferred=True)
 
-    async def emit(self, channel_id, content, nonce, *, reviewable=False):
+    async def emit(self, channel_id, content, nonce, *, reviewable=False, alert_role=None):
         if not self.online or self.closing:
             raise ValueError("Moderation transport is offline")
         channel = self.checked_channel(channel_id, sending=True)
@@ -720,9 +720,23 @@ class DiscordService(SlashCommands, ActionTransport):
         if isinstance(content, DeletionNotice):
             view = card_view(content, accent_colour=0xF0B232 if content.partial else 0x2ECC71)
         body = None if isinstance(view, discord.ui.LayoutView) else framed(content)
+        mentions = discord.AllowedMentions.none()
+        ping = False
+        if (alert_role and reviewable and channel_id == self.policy.command_channel_ids[0]
+                and alert_role == self.policy.rules.review_alert_role_id and alert_role != self.policy.guild_id
+                and self.policy_current() and isinstance(view, discord.ui.LayoutView)):
+            role = channel.guild.get_role(int(alert_role))
+            if (role and channel.permissions_for(role).view_channel
+                    and (role.mentionable or channel.permissions_for(channel.guild.me).mention_everyone)):
+                from .review_alerts import reserve
+                if reserve(self.live.engine):
+                    view.add_item(discord.ui.TextDisplay(f"<@&{alert_role}> · Review needed: flagged score below 0.90."))
+                    mentions = discord.AllowedMentions(everyone=False, users=False,
+                                                      roles=[discord.Object(id=int(alert_role))], replied_user=False)
+                    ping = True
         try:
-            sent = await asyncio.wait_for(channel.send(body, allowed_mentions=discord.AllowedMentions.none(),
-                nonce=nonce, suppress_embeds=True, silent=True, view=view), timeout=20)
+            sent = await asyncio.wait_for(channel.send(body, allowed_mentions=mentions,
+                nonce=nonce, suppress_embeds=True, silent=not ping, view=view), timeout=20)
             if proposal:
                 actions.bind(self.live.engine, proposal, str(sent.id))
             return sent
@@ -827,8 +841,11 @@ class DiscordService(SlashCommands, ActionTransport):
             try:
                 content = (self.live.render_snapshot(report["incident_id"], report["incident_revision"])
                            if report["kind"] == "moderator" else report["payload"]["content"])
+                from .review_alerts import eligible_role
+                role = eligible_role(self.live.engine, report)
                 sent = await self.emit(report["payload"]["channel_id"], content,
-                                       delivery_nonce("report:" + report["id"]), reviewable=report["kind"] == "moderator")
+                                       delivery_nonce("report:" + report["id"]), reviewable=report["kind"] == "moderator",
+                                       **({"alert_role": role} if role else {}))
                 self.live.finish_report(report["id"], str(sent.id))
             except asyncio.CancelledError:
                 self.live.finish_report(report["id"])

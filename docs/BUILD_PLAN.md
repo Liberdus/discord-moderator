@@ -1607,3 +1607,43 @@ The active standalone VPS was not accessed or updated here. Install the wheel
 there using `docs/slash-commands.md`; command registration happens at startup.
 No production credentials, DB, gateway, Discord registrations or system service
 were modified during implementation. The old moderation profile remains disabled.
+
+
+## 10.56 Committers role alerts for manual review (0.7.1)
+
+The owner chose @committers for flagged reviews below 0.90. Added opt-in
+`/mod config alert-role action:set role:@committers` (selector or raw ID) and
+`action:off`, under the existing operator plus Manage Server/owner checks.
+Validation requires an existing non-everyone role with staff-channel visibility
+and either mentionable status or the bot's channel-specific mention permission.
+No role ID was guessed, role selected, or live permissions changed here.
+
+Fresh moderator reports consult validated saved JEV evidence and the original
+score: four specific flagged concerns below 0.90 qualify. Benign/unclear results,
+non-JEV reports, stale evidence and exactly 0.90 or higher do not. The transport
+rechecks the configured role, channel and permissions, adds its explicit mention
+to the review components, permits only that role in allowed_mentions, and clears
+the silent flag. Reopened cards, edits, logs and other replies remain non-pinging.
+A durable five-minute global cooldown reserves before I/O, survives reconnects,
+and prevents rapid repeated or uncertain-delivery retry pings; reports continue
+without pings during the cooldown. No new provider calls or action decisions.
+
+The optional role defaults off and is excluded from the policy fingerprint while
+unset, preserving frozen legacy hashes. Explicit selection uses the existing
+atomic configuration/audit/reconnect mechanism. Setting IDs never modifies keys.
+The update/setup guides now target 0.7.1; docs/review-alerts.md describes role
+selection, Discord permissions, cooldown and disable instructions.
+
+Validation: 511 core/setup + 231 integration + 28 standalone = **770 tests**.
+The installed wheel additionally passed 28 SDK/runtime, 2 real synthetic screening
+alert-boundary/cooldown and 7 configuration tests (37 total) without Hermes.
+Checks cover frozen legacy hashes, raw role selection/off, role access/mention
+permissions, score boundaries, stale evidence, exact allowed-mentions payloads,
+normal notification flags, and cooldown after uncertain sends. All transport is
+mocked; no production messages, registrations, credentials, DB or VPS service
+were changed. The active standalone VPS must install and select the role; the old
+Hermes moderation profile remains disabled.
+
+Wheel: `dist/liberdus_discord_moderator-0.7.1-py3-none-any.whl`.
+SHA-256: `ac7196961e04e59d93299adfdad03161f7f56cc23bc903b44abb0cbf07c63f78`.
+All 57 packaged source modules match the reviewed checkout.

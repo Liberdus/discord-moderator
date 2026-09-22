@@ -1,6 +1,17 @@
 # Continue Liberdus moderation work as hermes
 
-Latest checkpoint: **0.7.0 native slash commands and configuration**. The owner
+Latest checkpoint: **0.7.1 Committers review alerts**. The owner chose @committers
+for new flagged reviews below 0.90. This release adds opt-in `/mod config alert-role`
+with role selector/raw ID and Off. Follow `docs/review-alerts.md` after the normal
+VPS wheel update: select the real Committers role in bot-mod; its ID was not
+provided and no live role/permission/configuration was changed here. Reports use
+only the selected role in allowed_mentions and enable normal notifications, with
+a durable five-minute cooldown. No historical/reopened-card pings, retries, or
+changes to the >=0.90 automatic rule. Default/off preserves prior policy hashes.
+Read BUILD_PLAN 10.56 for validation. The active VPS still needs installing and
+configuring; keep the old Hermes moderation profile disabled.
+
+Previous checkpoint: **0.7.0 native slash commands and configuration**. The owner
 requested a repository-specific Discord menu instead of the inherited Hermes
 commands and `!mod`, plus editing IDs. The standalone runner registers `/mod` in
 its configured guild and then clears its own application's obsolete global

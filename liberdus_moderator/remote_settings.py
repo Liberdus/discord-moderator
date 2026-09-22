@@ -27,6 +27,13 @@ def changed_ids(current, action, identity):
 
 def candidate(policy, operation, values, actor):
     """Construct only the explicitly editable fields, preserving all others."""
+    if operation == "alert-role":
+        if values["action"] not in {"set", "off"}:
+            raise SetupError("Choose Set or Off.")
+        role = values["role"] if values["action"] == "set" else None
+        if role == policy.guild_id:
+            raise SetupError("Choose a staff role other than @everyone.")
+        return replace(policy, rules=replace(policy.rules, review_alert_role_id=role))
     if operation == "monitor":
         return replace(policy, monitored_channel_ids=changed_ids(policy.monitored_channel_ids, values["action"], values["channel"]))
     if operation == "staff-channel":
@@ -97,6 +104,15 @@ def validate_edit(policy, proposed, operation, values, actor, get):
     if operation == "exempt-role" and values["action"] == "add":
         if values["role"] == policy.guild_id or values["role"] not in {role["id"] for role in guild["roles"]}:
             raise SetupError("Choose a server role other than @everyone.")
+    if proposed.rules.review_alert_role_id:
+        role = next((role for role in guild["roles"] if role["id"] == proposed.rules.review_alert_role_id), None)
+        if role is None or role["id"] == policy.guild_id:
+            raise SetupError("Choose an available staff alert role other than @everyone.")
+        bot = inventory(f"/guilds/{policy.guild_id}/members/{policy.bot_user_id}")
+        if not role.get("mentionable") and not permissions(guild, bot["roles"], policy.bot_user_id, staff) & (1 << 17):
+            raise SetupError("Allow this role to be mentioned, or grant the bot Mention @everyone, @here, and All Roles in the staff channel. The bot only pings the selected role.")
+        if not permissions(guild, (role["id"],), None, staff) & VIEW:
+            raise SetupError("Give the alert role View Channel access to the private staff channel first.")
     return report
 
 
@@ -125,6 +141,7 @@ def settings_card(policy, store):
         "Included categories: " + ids(policy.included_category_ids),
         "Excluded categories: " + ids(policy.excluded_category_ids),
         "Exempt roles: " + ids(policy.classifier.exempt_role_ids),
+        "Review alert role: " + (policy.rules.review_alert_role_id or "Off") + " · flagged score below 0.90 · five-minute cooldown",
         f"JEV caps: ${policy.classifier.daily_budget_microusd / 1_000_000:g}/day; ${policy.classifier.total_budget_microusd / 1_000_000:g} lifetime",
         f"Call caps: {policy.classifier.max_daily_calls}/day; {policy.classifier.max_total_calls} lifetime",
         "Automatic deletion: four approved concerns at score >= 0.90, with current-evidence checks.",

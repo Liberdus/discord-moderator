@@ -103,6 +103,20 @@ class ConfigurationTests(unittest.TestCase):
             with self.subTest(operation=operation, values=values), self.assertRaises(ValueError):
                 candidate(self.policy, operation, values, "98")
 
+    def test_alert_role_requires_staff_visibility_and_mention_permission(self):
+        values = {"action": "set", "role": "5"}
+        with self.assertRaises(SetupError):
+            self.validate("alert-role", values)
+        self.data["/guilds/1"]["roles"][1]["mentionable"] = True
+        self.assertTrue(self.validate("alert-role", values)["ok"])
+        with self.assertRaises(SetupError):
+            self.validate("alert-role", {"action": "set", "role": "1"})
+        self.data["/guilds/1/channels"][2]["permission_overwrites"].pop()
+        with self.assertRaises(SetupError):
+            self.validate("alert-role", values)
+        configured = candidate(self.policy, "alert-role", values, "98")
+        self.assertIsNone(candidate(configured, "alert-role", {"action": "off"}, "98").rules.review_alert_role_id)
+
     def test_atomic_policy_change_preserves_history_flags_counters_and_records_actor(self):
         with tempfile.TemporaryDirectory() as root:
             home = Path(root) / "instance"
