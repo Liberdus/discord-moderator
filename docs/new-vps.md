@@ -19,7 +19,9 @@ Run on the **new VPS**:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y git python3 python3-venv ca-certificates nano
+sudo apt-get install -y git gh python3 python3-venv ca-certificates nano
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git --hostname github.com
 git clone https://github.com/Liberdus/discord-moderator.git
 cd discord-moderator
 python3 -m venv .venv
@@ -28,6 +30,14 @@ python3 -m venv .venv
 sudo .venv/bin/liberdus-moderator install-service \
   --wheel dist/liberdus_discord_moderator-0.6.0-py3-none-any.whl
 ```
+
+The repository is private. During `gh auth login`, open the displayed URL on your
+own computer or phone, enter the one-time code, and sign in with the GitHub account
+that has access to `Liberdus/discord-moderator`. GitHub authentication belongs to
+your SSH setup account; it is not copied into the moderator's service account.
+See [GitHub CLI browser authentication](https://cli.github.com/manual/gh_auth_login).
+If SSH Git authentication is already configured for this repository, that can be
+used instead. A GitHub account login is separate from the Discord/JEV key prompts.
 
 The final command runs the interactive setup wizard and installs an encrypted
 credential store, dedicated service account, and systemd unit. **Omit `--start`**

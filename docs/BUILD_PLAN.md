@@ -1514,3 +1514,8 @@ SHA-256: `24f8758bc2e3b48ffa7de9f5c8dcd042e8c11f09c979b29fff90caaff121b946`.
 Its code is identical to the implementation wheel above; the packaged README now
 links the fresh-VPS guide. The accumulated source/tests/docs are included in the
 owner-authorized publication commit. The new VPS has not been deployed.
+
+Publication succeeded on `main` in commit `0d90728`. A follow-up read-only check
+confirmed the repository is private; the fresh-VPS guide therefore includes
+GitHub CLI browser authentication for the SSH setup account before cloning.
+Those GitHub credentials are not given to the moderation service.
