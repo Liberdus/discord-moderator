@@ -1,4 +1,4 @@
-"""Evaluation-only failure reasons, with no provider content or exception details.
+"""Screening failure reasons, with no provider content or exception details.
 
 Production response validation remains authoritative. A rejected response is
 inspected only to select a fixed diagnostic code; this module cannot make a
@@ -6,6 +6,7 @@ response acceptable or change a moderation decision.
 """
 
 import asyncio
+from datetime import datetime, timezone
 import math
 import ssl
 from types import MappingProxyType
@@ -31,7 +32,7 @@ _DIAGNOSTICS = {
     "network.payload": "The provider response could not be read completely.",
     "network.client": "The HTTP client could not complete the provider request.",
     "network.io": "A network or operating-system I/O failure interrupted the request.",
-    "provider.missing_key": "The evaluation profile has no usable TypeSafe API key.",
+    "provider.missing_key": "The profile has no usable TypeSafe API key.",
     "provider.authentication_failed": "The provider rejected API authentication.",
     "provider.access_denied": "The provider denied access to this request.",
     "provider.rate_limited": "The provider rate-limited the request.",
@@ -188,3 +189,31 @@ def failure_diagnostic(error, phase="request"):
     if isinstance(error, OSError):
         return "network_error", "network.io"
     return "internal_error", "internal.request"
+
+
+def live_failure_lines(store):
+    """Read the last retained request failure; never reinterpret old generic errors."""
+    tables = {row[0] for row in store.db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+        "('screening_attempts_v1','screening_failures_v1')")}
+    if "screening_attempts_v1" not in tables:
+        return []
+    has_details = "screening_failures_v1" in tables
+    detail = "d.diagnostic" if has_details else "NULL"
+    join = " LEFT JOIN screening_failures_v1 d ON d.attempt_key=a.key" if has_details else ""
+    outcomes = tuple(sorted(_PROVIDER_CODES | {"provider_or_response_error", "timeout", "uncertain",
+                                             "usage_exceeds_reservation"}))
+    row = store.db.execute("SELECT a.finished_at," + detail + " AS diagnostic FROM screening_attempts_v1 a" +
+        join + " WHERE a.outcome IN (" + ",".join("?" for _ in outcomes) +
+        ") ORDER BY a.started_at DESC LIMIT 1", outcomes).fetchone()
+    if row is None:
+        return []
+    stamp, code = row[0], row[1]
+    if type(stamp) not in (int, float) or not math.isfinite(stamp) or not 0 < stamp <= 253402300799:
+        return []
+    lines = ["", "LAST FAILED AI CHECK (UTC)", datetime.fromtimestamp(stamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")]
+    if type(code) is str and code in DIAGNOSTIC_CODES:
+        lines += [code, DIAGNOSTICS[code]]
+    else:
+        lines += ["Details were not recorded."]
+    return lines

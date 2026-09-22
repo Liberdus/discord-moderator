@@ -25,7 +25,7 @@ from .screening_eval_ledger import ScreeningEvalLedger
 from .storage import Store
 
 MAX_RUN_SECONDS = 600
-DECISION_VERSION = "moderator-0.5.4"
+DECISION_VERSION = "moderator-0.5.15"
 
 
 @contextmanager

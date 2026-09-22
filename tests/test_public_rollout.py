@@ -35,7 +35,7 @@ class PublicRolloutTests(unittest.TestCase):
         self.default.write_text('platforms:\n  discord:\n    enabled: false\n')
         self.local = self.profile / 'config.yaml'
         self.local.write_text('platforms:\n  discord:\n    enabled: false\n  liberdus_moderator:\n    enabled: false\n')
-        (self.profile / 'plugins/liberdus-moderator/plugin.yaml').write_text('name: liberdus-moderator\nversion: 0.5.9\n')
+        (self.profile / 'plugins/liberdus-moderator/plugin.yaml').write_text('name: liberdus-moderator\nversion: 0.6.0\n')
         self.lock = self.profile / 'state/moderation.lock'
         self.lock.touch()
         self.database = self.profile / 'state/moderation.sqlite3'
@@ -146,13 +146,26 @@ class PublicRolloutTests(unittest.TestCase):
         del self.channels[3]['parent_id']
         with self.assertRaisesRegex(RolloutError,'metadata'): inventory(self.config,self.get)
 
-    def test_bot_mod_must_remain_private_and_outside_exclusion(self):
+    def test_bot_mod_must_remain_private_but_can_be_in_excluded_category(self):
         row=next(row for row in self.channels if row['id']==COMMAND)
         row['permission_overwrites']=[]
         with self.assertRaisesRegex(RolloutError,'bot-mod'): self.plan()
         row['permission_overwrites']=self.channel(COMMAND,'bot-mod',private=True)['permission_overwrites']
         row['parent_id']=COMMITTERS
-        with self.assertRaisesRegex(RolloutError,'bot-mod'): self.plan()
+        result=self.plan()
+        self.assertEqual([r['channel_id'] for r in result['selected_channels']], ['201','202'])
+        omitted={r['channel_id']:r['reason'] for r in result['omitted']}
+        self.assertEqual(omitted[COMMAND], 'private_commands_and_reports')
+        self.assertEqual(omitted['203'], 'excluded_category')
+        self.assertEqual(result['excluded_category_ids'], [COMMITTERS])
+
+    def test_bot_mod_in_excluded_category_still_needs_private_read_write_access(self):
+        row=next(row for row in self.channels if row['id']==COMMAND)
+        row['parent_id']=COMMITTERS
+        original=copy.deepcopy(row['permission_overwrites'])
+        for denied in (VIEW, HISTORY, SEND):
+            row['permission_overwrites']=original+[dict(id=BOT,type=1,allow='0',deny=str(denied))]
+            with self.assertRaisesRegex(RolloutError,'bot-mod'): self.plan()
 
     def test_missing_bot_access_refuses_partial_plan(self):
         self.channels[3]['permission_overwrites']=[dict(id=BOT,type=1,deny=str(VIEW),allow='0')]

@@ -97,7 +97,8 @@ class ManualDeleteTests(unittest.TestCase):
         text=manual_delete.confirmation(self.engine,manual_delete.checked_refresh(self.engine,request,events))
         self.assertLessEqual(units(text),1900)
         self.assertNotIn('@everyone',text)
-        self.assertEqual(text.count('```'),4)
+        self.assertNotIn('```',text)
+        self.assertIn('\\`\\`\\`',text)
         self.assertIn('Text excerpts',text)
 
     def test_old_policy_is_not_restored_by_refresh_and_direct_command_only_requests_fetch(self):

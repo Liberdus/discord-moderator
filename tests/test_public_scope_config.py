@@ -18,6 +18,7 @@ class PublicScopeConfigTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 config = policy(schema_version=schema)
                 legacy = asdict(config)
+                del legacy['explicit_channel_scope']
                 del legacy['allow_public_deletion'], legacy['allow_public_monitored_channels'], legacy['excluded_category_ids'], legacy['included_category_ids']
                 if schema == 1:
                     del legacy['classifier']
@@ -26,6 +27,10 @@ class PublicScopeConfigTests(unittest.TestCase):
                 expected = hashlib.sha256(json.dumps(legacy, sort_keys=True, separators=(',', ':'),
                                                       ensure_ascii=False).encode()).hexdigest()
                 self.assertEqual(config.policy_hash, expected)
+                # Captured from the unmodified 0.5.16 Config implementation.
+                frozen = {1: '9565c5e66e72a64cb4e621b5de4e0ba1658d906b777c6c48aace851e8a92b14e',
+                          2: '80672ebc5f52fb24fdb9174c4c8adfac0c42e2de4aae266a3ddaabb6f7fe113d'}
+                self.assertEqual(config.policy_hash, frozen[schema])
                 self.assertEqual(Config.from_dict(tomllib.loads(policy_text(config))), config)
 
     def test_opt_in_and_exclusions_bind_policy_hash_and_round_trip(self):
@@ -52,7 +57,7 @@ class PublicScopeConfigTests(unittest.TestCase):
         self.assertEqual(Config.from_dict(tomllib.loads(policy_text(config))),config)
         self.assertNotEqual(base.policy_hash,config.policy_hash)
         self.assertNotEqual(config.policy_hash,replace(config,included_category_ids=('100',)).policy_hash)
-        prior=asdict(base); del prior['allow_public_deletion'], prior['included_category_ids']; del prior['classifier']['exempt_role_ids']
+        prior=asdict(base); del prior['allow_public_deletion'], prior['included_category_ids'], prior['explicit_channel_scope']; del prior['classifier']['exempt_role_ids']
         expected=hashlib.sha256(json.dumps(prior,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
         self.assertEqual(base.policy_hash,expected)
         for values in (('0',),('abc',),('100','100'),('200',),[True],'100'):

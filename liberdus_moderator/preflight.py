@@ -63,9 +63,11 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class DiscordReader:
     def __init__(self, token):
         self.token = token
-        self.opener = urllib.request.build_opener(NoRedirect())
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
     def __call__(self, path):
+        if not isinstance(path, str) or not path.startswith("/") or any(c in path for c in "\r\n#"):
+            raise PreflightError("Invalid Discord metadata request.")
         request = urllib.request.Request(
             "https://discord.com/api/v10" + path,
             headers={"Authorization": "Bot " + self.token,
@@ -127,7 +129,7 @@ def inspect(config, get):
         raise PreflightError("Bot guild membership did not match configuration.")
     results = []
     category_checks = {}
-    guarded_scope = config.allow_public_monitored_channels or bool(config.excluded_category_ids or config.included_category_ids)
+    guarded_scope = config.explicit_channel_scope or config.allow_public_monitored_channels or bool(config.excluded_category_ids or config.included_category_ids)
     for channel_id in (*config.monitored_channel_ids, *config.command_channel_ids):
         channel = get(f"/channels/{channel_id}")
         if (channel.get("id") != channel_id or channel.get("guild_id") != config.guild_id
@@ -159,10 +161,10 @@ def inspect(config, get):
             "channel_id": channel_id,
             "purpose": "commands_and_reports" if command_channel else "monitoring",
             "category_id": category_id,
-            "category_allowed": (category_id not in config.excluded_category_ids
-                and (command_channel or not config.included_category_ids or category_id in config.included_category_ids)),
+            "category_allowed": (command_channel or (category_id not in config.excluded_category_ids
+                and (not config.included_category_ids or category_id in config.included_category_ids))),
             "private_required": private_required,
-            "public_required": not private_required,
+            "public_required": not private_required and not config.explicit_channel_scope,
             "bot_view": bool(bits & VIEW),
             "bot_read_history": bool(bits & VIEW and bits & HISTORY),
             "bot_send": bool(bits & VIEW and bits & SEND),
@@ -178,7 +180,8 @@ def inspect(config, get):
         "bot_identity_matches": True, "guild_id": config.guild_id,
         "channels": results,
         "checks_passed": all(r["required_permissions_ok"] and r["category_allowed"]
-                             and r["everyone_hidden"] == r["private_required"]
+                             and (r["everyone_hidden"] == r["private_required"]
+                                  or (config.explicit_channel_scope and not r["private_required"]))
                              and not r["bot_administrator"] for r in results),
         "limitations": "No messages read or sent. Other role membership, gateway intents, and live moderation remain unverified.",
     }

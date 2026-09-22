@@ -35,9 +35,10 @@ class RoleToggleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.get_setting('screening_total_calls',0),0)
 
 class DisplayTests(unittest.TestCase):
-    def test_mobile_width_and_link_preservation(self):
+    def test_natural_wrapping_and_link_preservation(self):
         result=panel('Status',['A long line ' * 12])
-        self.assertTrue(all(len(line)<=32 for line in result.split('```')[1].splitlines()))
+        self.assertIn('A long line ' * 12,result)
+        self.assertNotIn('```',result)
         text=result+'\n[Open message](https://discord.com/channels/1/2/3)'
         self.assertIn('[Open message](https://discord.com/channels/1/2/3)',framed(text))
         self.assertLess(len(framed('x'*1900)),2000)
@@ -50,6 +51,7 @@ class DisplayTests(unittest.TestCase):
         live=LiveSession(engine)
         for i,name in enumerate(('help','status','exempt-role')):
             result=live.command(CommandRequest('1','20','98',name),str(100+i),True)
-            self.assertIn('```', result)
+            self.assertTrue(result.startswith('## '))
+            self.assertNotIn('```', result)
             self.assertLess(len(framed(result)),2000)
         self.assertIsNone(live.command(CommandRequest('1','10','98','exempt-role',arguments=('off',)),'200',True))

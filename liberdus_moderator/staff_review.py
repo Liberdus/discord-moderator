@@ -139,12 +139,12 @@ def pending_page(engine, page=1):
 
 
 def format_pending(data):
-    lines = ["**Pending staff reviews**", f"{data['total']} pending | Page {data['page']}/{data['pages']}", "```"]
+    lines = ["## Pending staff reviews", f"{data['total']} pending · Page {data['page']}/{data['pages']}", ""]
     for item in data["items"]:
-        lines += [item["label"], f"Revision {item['revision']}", item["id"], ""]
+        lines += ["### " + item["label"], f"Revision {item['revision']}", "`" + item["id"] + "`", ""]
     if not data["items"]:
         lines.append("No pending staff reviews.")
-    lines += ["```", "Open: `!mod incident ID`"]
+    lines += ["Open: `!mod incident ID`"]
     if data["page"] < data["pages"]:
         lines.append(f"Next: `!mod pending {data['page']+1}`")
     lines.append("Saved incidents only. No moderation action or new AI call.")

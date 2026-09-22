@@ -59,16 +59,14 @@ class SavedClassificationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_private_rendering_is_bounded_and_includes_safe_saved_excerpt(self):
         text = self.live.command(self.request, "900", True)
-        self.assertIn("Label     : Quoted warning", text)
-        self.assertIn("Score     : 0.80 (model score)", text)
-        self.assertIn("Evaluated : Revision 1", text)
-        self.assertIn("Revision 1, 0s ago", text)
-        self.assertIn("Evidence  : CURRENT", text)
-        self.assertEqual(text.count("```"), 4)
-        panel = text.split("```\n", 1)[1].split("\n```", 1)[0]
-        self.assertTrue(panel.isascii())
-        self.assertLessEqual(max(map(len, panel.splitlines())), 32)
-        self.assertIn("Incident ID\n" + self.identity, text)
+        self.assertIn("**Quoted warning**", text)
+        self.assertIn("Score **0.80** (model score)", text)
+        self.assertIn("Evaluated revision 1", text)
+        self.assertIn("revision 1 · 0s ago", text)
+        self.assertIn("Evaluation record matches the current saved evidence", text)
+        self.assertNotIn("```", text)
+        self.assertIn("### Saved message\n> ", text)
+        self.assertIn("Incident ID: `" + self.identity, text)
         self.assertIn("no new AI call", text)
         self.assertIn("Deletion and timeouts are disabled.", text)
         self.assertIn("claim a reward", text)
@@ -98,9 +96,9 @@ class SavedClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.incident(self.identity)["status"], "open")
         self.assertEqual(self.dump(), before)
         text = self.live.command(self.request, "902", True)
-        self.assertIn("Revision 1, 1h ago", text)
-        self.assertIn("Evidence  : HISTORICAL", text)
-        self.assertIn("JEV is historical: evidence window expired", text)
+        self.assertIn("revision 1 · 1h ago", text)
+        self.assertIn("**Historical result:**", text)
+        self.assertIn("**Historical result:** evidence window expired", text)
 
     async def test_edit_withdrawal_preserves_result_as_history(self):
         self.now += 10
@@ -171,8 +169,8 @@ class SavedClassificationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(view["outcome"], outcome)
                 self.assertNotIn("choice", view)
                 text = self.live.command(self.request, str(950 + index), True)
-                self.assertNotIn("Confidence:", text)
-                self.assertIn("Result    :", text)
+                self.assertNotIn("Score **", text)
+                self.assertIn("Result:", text)
                 self.assertIn(outcome.split("_")[0].capitalize(), text)
 
     async def test_no_attempt_row_is_read_only_and_not_retried(self):
@@ -189,8 +187,8 @@ class SavedClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.now -= 1
         self.assertEqual(self.view()["reason"], "clock_changed")
         text = self.live.command(self.request, "960", True)
-        self.assertIn("Revision 1, unknown", text)
-        self.assertIn("Evidence  : HISTORICAL", text)
+        self.assertIn("revision 1 · unknown", text)
+        self.assertIn("**Historical result:**", text)
         self.assertNotIn("@everyone", text)
         self.assertNotIn("arbitrary provider", text)
 

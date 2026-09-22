@@ -10,6 +10,10 @@ from .staff_review import digest, saved_assessment
 
 TIMEOUT_SECONDS = 600
 MAX_TARGETS = 8
+# Explicit owner-approved action scope; adding a screening label must not
+# silently authorize that label for deletion.
+AUTO_DELETE_CONCERNS = frozenset({'sensitive_request', 'impersonation', 'suspicious_offer', 'targeted_abuse'})
+AUTO_DELETE_MIN_SCORE = .90
 
 
 class ActionError(ValueError):
@@ -112,7 +116,8 @@ def automatic_candidate(engine, incident):
         return False
     view = saved_screening(engine, incident)
     return (len(incident['evidence']) == 1 and view.get('evidence_state') == 'current'
-            and view.get('choice') == 'sensitive_request' and view.get('confidence', 0) > .90
+            and view.get('choice') in AUTO_DELETE_CONCERNS
+            and view.get('confidence', 0) >= AUTO_DELETE_MIN_SCORE
             and view.get('purpose') not in ('quoted_warning', 'unclear')
             and view.get('age_seconds') is not None and 0 <= view['age_seconds'] <= 60
             and not engine.role_exempt(incident['evidence'][0].get('author_role_ids', ())))

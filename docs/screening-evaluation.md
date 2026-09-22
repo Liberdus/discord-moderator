@@ -1,5 +1,7 @@
 # JEV screening decision evaluation
 
+Current source uses the owner-approved [0.5.15 four-concern >=0.90 rule](auto-delete-scope.md). The recorded baseline and original zipapps below used the earlier sensitive-request-only >0.90 rule. A read-only replay of the 44 saved matching results under 0.5.15 gives 15/16 harmful, 0/20 benign and 1/8 ambiguous deletion candidates; the ambiguous candidate scores exactly 0.90. Original expectations, results, artifacts and accounting were preserved, with no new API calls.
+
 The standalone `screening-v1` runner tests **44 synthetic messages** against the actual JEV API: 20 benign, 16 harmful and 8 ambiguous examples. It reports harmless messages that would qualify for automatic deletion, false staff reports, harmful messages that would receive no report, and ambiguous deletion candidates. Expected purpose/concern labels are review hypotheses written before the provider run; some ambiguous cases allow a small set of labels.
 
 The suite covers credential requests and contrasting warnings/refusals; legitimate support, documentation and ordinary promotions; impersonation, suspicious rewards and targeted abuse; missing context and classifier-injection attempts; and Spanish, Vietnamese and French examples. All URLs use reserved `.invalid` domains. Only synthetic message text and extracted URLs reach JEV, alongside the production rubric. Case names, expected labels and safety classifications stay local.

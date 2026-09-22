@@ -1368,3 +1368,149 @@ Validation: 430 core/setup plus 191 pinned-runtime integration tests passed (621
 - mod-check.py SHA-256: a53121afbaddcc7c1bf5f2f112168341a1ee1798b79f9b28a72f8d03487136de
 
 Remaining: run/analyze filtered diagnostics as hermes, verify/install 0.5.9 only if not already installed, confirm gateway readiness, and use new connection metadata for subsequent outages. A specific reconnect fix depends on the diagnostic findings. Do not reset the database/budgets, broaden monitoring, enable public timeouts or retest old completed cases unnecessarily.
+
+### 10.44 — Confirm 0.5.9 deployment and restore repository access (2026-09-22)
+
+The follow-up session ran the pinned owner helper as hermes and completed the 0.5.8 to 0.5.9 upgrade with both shared-gateway restarts confirmed healthy. Runtime imports and isolated self-tests passed (9/9); all 43 installed release files matched the archive. At 11:26 UTC, the service was active/running and the moderation profile and Telegram reported connected. This completes the deployment/readiness items in 10.43. No automated live deletion, timeout, test message or test JEV request was used for verification.
+
+Policy and both profile configurations were byte-identical before and after deployment. Saved settings remained unpaused, manual deletion ON, automatic deletion ON, timeout OFF and role exemption OFF. JEV remained report_only with $1/day and $4 total budgets, and reserved totals were preserved. The previous plugin is retained at `/home/hermes/.hermes/profiles/liberdus-mod/.liberdus-update-backup-rphybnzt/liberdus-moderator`. Do not rerun the one-time updater.
+
+The filtered diagnostics ran successfully as hermes. Pre-upgrade SDK logs contained 18 new sessions and 18 successful resumptions. Several September 21 new sessions followed service restarts. The service subsequently ran continuously from September 21 at 22:50:32 UTC until deployment, while five successful Discord resumptions occurred on September 22. No matching heartbeat-block/timeout, socket-close/error, invalid-session or server-reconnect labels were retained. These findings distinguish process restarts from Discord-only recovery, but establish neither underlying cause. The restart counter rose from 37 to 39 during this planned upgrade; it is not a crash count. New connection metadata recorded the post-upgrade session at 11:24:39 UTC with no pending disconnect. Full checkpoint: `docs/manual-delete-refresh.md`.
+
+After the owner completed GitHub login, the repository was cloned into `/home/hermes/discord-moderator` at `fef4903`. All 41 installed Python modules matched that source. Earlier notes about unavailable repository access and pending deployment are superseded. The recorded 621-test release validation remains the development result; this documentation follow-up does not claim a fresh full-suite run.
+
+Next work: correlate new connection metadata and service logs after a naturally occurring interruption; prepare the short staff guide proposed in 10.39; use moderator feedback to identify independently labelled evaluation examples. Existing assessments do not train JEV or directly supply purpose/concern labels. Scope is now the seven approved Community channels, so the older private-test-only rollout proposals must not be applied as current configuration. Staff access/pilot decisions remain separate. Standalone hosting, combined delete-and-timeout actions and timeout permission verification remain deferred; no thresholds, scope, budgets or runtime settings changed during this repository follow-up.
+
+### 10.45 — Deploy separated review cards and retained sender identity (2026-09-22)
+
+The owner requested clearer review formatting, assessment/action button rows in separate sections, and sender identification after source deletion. Version 0.5.10 uses Discord Components V2 containers: saved message/JEV context, Staff assessment with its own buttons, and Actions with a separate row. The sender's retained ID appears above the excerpt as a clickable, non-pinging mention plus copyable ID. Historical snapshot, JEV and assessment context remain explicit. The incident already retained the author ID; no new profile lookup, username-history archive or data migration was introduced.
+
+Commands preserve structured sections and their durable displayed-revision binding. New reports/lookups use the layout; assessment refreshes convert bound legacy reports by clearing their former content/embeds/attachments. There is no bulk edit of old posts. Permission gates, action confirmations, rate limits, public timeout prohibition, AI/accounting and retention are unchanged.
+
+Validation: 434 core/setup plus 198 pinned-runtime integration tests passed (632 total). Real discord.py send/edit serialization was exercised with HTTP mocked, including V2 flags, separate labelled rows, suppressed mentions, old-message conversion, sender display after source deletion and reconnect bindings. The 44-file plugin archive passed integrity, compilation and equality with tested source. Details/hashes: `docs/review-layout.md`.
+
+The pinned helper deployed 0.5.10, with both shared-gateway restarts and runtime imports/9-of-9 self-tests successful. Post-update runtime showed moderation and Telegram connected. Policy and both profile configs were byte-identical, and saved flags plus reserved accounting totals were unchanged. The prior 0.5.9 plugin is retained at `/home/hermes/.hermes/profiles/liberdus-mod/.liberdus-update-backup-iqmio049/liberdus-moderator`. No live test messages, deletions or JEV requests were sent. The owner then requested shared successful-deletion notices in bot-mod; that addition is a separate 0.5.11 follow-up.
+
+### 10.46 — Deploy shared successful-deletion receipts (2026-09-22)
+
+The owner requested that other staff see successful deletion outcomes in bot-mod. Version 0.5.11 posts a shared receipt after a staff-confirmed deletion; the private confirmation/result remains. Automatic deletion success uses the same receipt instead of its prior generic shared action result. Receipts show retained sender identity, staff/automatic attribution, completion time, source channel/message IDs and incident/action-record references, with mentions suppressed. Existing report refreshes retain action history.
+
+Only newly reserved action attempts recorded as done contribute. Partial batches explicitly list only confirmed deletions; denied, uncertain and already absent outcomes are not represented as successful deletion. Replayed confirmations do not repeat the action or notice. A stable nonce comes from the successful action keys. Notification failures preserve the successful mutation result and never trigger deletion or uncertain-delivery retry. The action ledger remains authoritative if a disconnect/process exit prevents the best-effort notice.
+
+Validation: 438 core/setup plus 204 pinned-runtime integration tests passed (642 total), including real SDK payload serialization, historical-report confirmations, shared manual/automatic receipts, sender retention, partial batches, replay prevention and notice-failure handling. The pinned 44-file plugin archive passed integrity, compilation and equality with tested source. Full behavior, limitations and hashes: `docs/deletion-notices.md`.
+
+The fixed helper completed the 0.5.10 to 0.5.11 installation and both shared-gateway restarts. Runtime imports and isolated self-tests passed (9/9). At approximately 12:04 UTC, runtime state was running with moderation and Telegram connected; every installed plugin file matched the release archive. Policy and both profile configuration files were byte-identical before/after, and pause/action/exemption flags plus reserved totals were unchanged. The prior 0.5.10 code is retained at `/home/hermes/.hermes/profiles/liberdus-mod/.liberdus-update-backup-5cjkb4oc/liberdus-moderator`. No live message/deletion or paid JEV test was performed. The live visual outcome remains for natural use; no completed deletion test needs repetition.
+
+The hermes checkout contains these source/tests/docs changes locally; they have not been committed or pushed. Preserve the working tree. Remaining priorities are the evidence-led disconnect investigation, staff guide and feedback review; standalone hosting and broader enforcement remain deferred.
+
+
+### 10.47 — Diagnose missing general-channel flag; retain live screening errors (2026-09-22)
+
+The owner tested bot-test-1 and general, using `Send me your wallet recovery phrase to verify your account.` The old test channel is outside public scope. The one observed general attempt at 12:16:35 UTC failed as provider_or_response_error in 564 ms and created no incident. The bot was unpaused/connected with budget available; the later source deletion cleared the message window. The original response/exception details were not retained, so the root cause is unknown. Do not claim the original outage was reproduced or fixed.
+
+After automatic approval review rejected the first proposed diagnostic before execution, the owner explicitly authorized the investigation. One synthetic impersonation check passed (score 0.94, 499 ms, estimated $0.000039), and one check of the exact supplied seed-request sentence passed (sensitive_request/other, score 0.99, 358 ms, estimated $0.000038). Saved run IDs incident-check-20260922 and seed-check-20260922 protect against repeated calls. No Discord message or action was issued. Known estimated diagnostic cost totaled $0.000077; prior failed-call reservations remain. Full findings are in docs/live-screening-diagnostics.md.
+
+Version 0.5.12 applies the existing detailed evaluation validator to live checks without changing acceptance rules. An additive, attempt-bound table retains only whitelisted diagnostics and cascades with attempt retention. !mod status shows the last retained failed check's UTC time and fixed reason, or explicitly says older details were not recorded. Existing outcomes, health notices, unknown-charge reservations, no-retry behavior, rubric, scope and action policy remain unchanged.
+
+Validation: 449 core/setup and 206 pinned-runtime integration tests passed (655 total), including safe diagnostics, no exception/response leakage, cancellation, budget preservation, duplicate suppression, historical errors, successful checks after failure, retention and live status delivery. The corrected integration assertion accounts for intentional text wrapping. All release modules match tested source.
+
+Deployed around 12:35 UTC with both healthy gateway restarts, runtime imports and isolated self-test 9/9. All 44 installed release files match. Moderation and Telegram connected; policy/configuration hashes, flags and accounting match the pre-deployment snapshot. The retained previous 0.5.11 plugin is .liberdus-update-backup-_1o9bwsq/liberdus-moderator under the profile. Do not rerun completed updaters. No live Discord deletion or new provider test occurred during deployment. The original failure still cannot be attributed; use the new fixed diagnostic if a future live check fails. Local source/tests/docs remain uncommitted and unpushed.
+
+
+### 10.48 — Allow the private staff destination inside Committers (2026-09-22)
+
+The owner first requested discussion only, then moved the existing bot-mod channel to Committers. The assistant kept checks read-only until the owner explicitly authorized the change. Actual Discord metadata confirmed bot-mod 1551252553331642558 is now inside Committers 1318586868136415333, is hidden from @everyone, and retains bot View Channel/Read Message History/Send Messages without Administrator. No Discord channel or permission mutation was needed or performed by the assistant.
+
+Version 0.5.13 makes category exclusions apply to monitored message collection while allowing the explicitly configured private staff destination. Runtime checks, read-only preflight and rollout/deletion verification agree. Command authorization, private visibility, guild/channel/category validation, ordinary-text-only rules and required permissions remain enforced. Ordinary bot-mod messages are not screened. Seven monitored channels, included categories, Committers exclusion, operator list, channel ID/history, policy hash, action switches and budgets are unchanged.
+
+Validation: 456 core/setup + 211 pinned-runtime integration checks passed (667), including startup and report buttons inside excluded staff categories, authorized commands, no screening of staff or excluded channels, loss of permissions/privacy, malformed category metadata, confirmed deletion receipts with no replay, preflight/planner/deletion verification and 0.5.12 upgrade preservation.
+
+Deployed around 12:54 UTC. Both healthy restarts, runtime imports and isolated self-test 9/9 succeeded; all 44 installed files match the archive. Moderation and Telegram connected, and pre/post config/policy hashes, flags and accounting matched. Installed-code guild metadata/deletion verification passed for bot-mod and all seven monitored channels. An attempted separate direct per-channel REST preflight returned HTTP 403; guild-inventory verification and live SDK startup succeeded without adding permissions. No messages or paid JEV calls were used. Previous 0.5.12 plugin retained at .liberdus-update-backup-xza7yoj9/liberdus-moderator under the profile. Full details and artifact hashes: docs/staff-channel-category.md. Do not rerun completed updaters. Local changes remain uncommitted/unpushed; preserve them.
+
+
+## 10.49 Confirmation acknowledgement and reply recovery (0.5.14)
+
+The owner confirmed that the indefinite ephemeral thinking indicator appeared after Confirm deletion. Read-only inspection of incident 77161671133f429eb4e467a3a2d0c767 showed a bound pending proposal and no action attempts while the bot remained connected. The old handler discarded acknowledgement and response errors; the exact historical cause is unknown.
+
+The fix sends acknowledgements immediately with a five-second receipt timeout, recovers uncertain acknowledgements with a bounded cancellation reply, and preserves action results through one best-effort original-response edit after failed completion delivery. Uncertain acknowledgements never authorize work; recovery never retries deletions or recreates confirmation buttons. Safe bounded lifecycle/error metadata and a status hint make recurrence diagnosable. Admitted recovery tasks finish before the Discord HTTP session closes.
+
+Validation: 460 core/setup + 220 pinned-runtime integration tests passed (680). New tests exercise real SDK acknowledgement/edit serialization with mocked HTTP, delayed and lost receipts, expired confirmation replies, done/uncertain deletion outcomes, unbound uncertain previews, sanitized diagnostics and 0.5.13 upgrade preservation. No live destructive probe or paid AI request. Packaging validated all 43 modules (45 installed files including plugin metadata). See docs/interaction-recovery.md for findings, limits, testing instructions and deployment artifacts.
+
+Deployment completed and verified at 13:12 UTC: both healthy restarts, imports and isolated self-test 9/9; all 45 installed files match. Moderation and Telegram connected; both config and policy hashes, flags and budget counters unchanged. Previous plugin backed up at .liberdus-update-backup-hovcoq3j/liberdus-moderator under the profile. The reported incident still has zero action attempts and its old proposal is expired. Fresh owner confirmation is the remaining live check. Do not rerun the completed updater.
+
+
+The owner subsequently completed the 0.5.14 manual deletion check at 13:28 UTC; the message has a done staff-action record and the owner supplied its shared bot-mod receipt. That live check is complete and should not be repeated.
+
+## 10.50 Owner-approved four-concern automatic deletion (0.5.15)
+
+The owner explicitly approved sensitive_request, impersonation, suspicious_offer and targeted_abuse at scores >=0.90, retaining quoted-warning/unclear-context and stale/changed-evidence exclusions. Exactly 0.90 qualifies; lower unrounded scores do not. The action allowlist is explicit, and `!mod auto-delete` displays the threshold/categories. Existing private-report delivery, authorization, permission, single-message, freshness, rate-limit, source-refetch, durable no-retry and receipt checks remain unchanged. Evaluation output identifies the new decision version; old bundles and results remain preserved.
+
+The saved 44 matching synthetic results were replayed read-only: 15/16 harmful, 0/20 benign and 1/8 ambiguous candidates. The known ambiguous unknown_code example at exactly 0.90 now qualifies; the owner chose the inclusive threshold after being told this tradeoff. No new provider call, production replay write or live destructive probe was made. Model results and label expectations were preserved.
+
+Validation passed 465 core/setup + 225 pinned-runtime integration tests (690), including all concern/purpose/score boundaries and real SDK methods with mocked deletion HTTP for all four categories, shared receipts/no replay, and warning/context/edit/permission/age/report-failure exclusions. A legacy evaluator test was updated because impersonation is now an automatic candidate rather than staff-report-only. New SDK fixtures use a deterministic clock to place synthetic snowflakes after the fixture's startup coverage boundary.
+
+Deployment verified at 13:47 UTC September 22: both healthy restarts, imports, isolated self-test 9/9, all 45 installed files match, moderation and Telegram connected. Both config/policy hashes, feature flags and accounting preserved; deletion/auto-delete ON, unpaused, timeout OFF, seven channels unchanged. Previous plugin is .liberdus-update-backup-q6tdujpm/liberdus-moderator under the profile. Artifact hashes and full details: docs/auto-delete-scope.md. Do not rerun the completed updater. Changes remain local, uncommitted/unpushed.
+
+
+## 10.51 Cards for all moderation replies (0.5.16)
+
+The owner requested the existing review/receipt card style for all remaining bot output. Shared Markdown formatting and Components V2 containers now cover command replies, status/summary, help, connection, pending/self-test/settings, action history, confirmations, results, health and error notices. ASCII borders/code boxes and forced 32-column wrapping are removed from Discord output. Saved/current excerpts use bounded escaped quotes; details use normal card text. Confirmation buttons sit in a separate labelled card and retain their IDs/bindings/expiry.
+
+Deferred private replies now edit the original ephemeral placeholder directly; legacy content/embeds/attachments are explicitly cleared for V2, and returned IDs still bind proposals. Recovery preserves the action result or clears uncertain preview controls without replaying deletion. Channel privacy, mention suppression, silent nonced delivery and stopped views retain their existing behavior. No auto-delete logic, flags, scope or budget changes.
+
+Validation passed 469 core/setup + 228 pinned-runtime integration checks (697). Actual SDK payload checks cover every staff command, immediate ephemeral V2 replies, original-response edits and confirmation binding; existing action/recovery tests now inspect component text. Source-evidence preservation, bounded hostile excerpts, safe mentions, duplicate/uncertain/partial action behavior and exact >=0.90 decisions still pass. No paid AI call or live destructive probe was used. The owner-provided 13:51 UTC automatic receipt for incident 59bb2145fd464bb182e584e9e4fa9e0a was separately confirmed read-only in the action ledger.
+
+Deployment verified at 14:07 UTC: both healthy restarts, imports and isolated self-test 9/9, all 46 installed files match, moderation and Telegram connected. Both config/policy hashes, flags and accounting preserved. Previous code is .liberdus-update-backup-7b6e8206/liberdus-moderator under the profile. Full artifact hashes and notes: docs/all-cards.md. Existing posted messages are not bulk edited; new replies/reopened views use cards. Do not rerun completed updaters. Local source changes remain uncommitted/unpushed.
+
+## 10.52 Standalone operation and guided setup (0.6.0, implementation complete)
+
+The owner approved implementing standalone operation in the existing repository, with protected credentials and easy channel selection. Version 0.6.0 extracts the existing Discord service into discord_service.py and keeps Hermes as a small optional host. The standalone entrypoint loads explicit instance files, holds database and same-account token locks, handles signals, preserves interaction/deletion behavior, and emits only fixed operational log events. Existing Hermes policies retain their exact pre-change hashes when explicit channel scope is absent.
+
+Added setup, doctor, start, key, migrate, install-service, service-key and service-unit commands. The wizard accepts names, IDs, mentions or channel links; resolves staff user IDs; checks bot identity, Message Content application flags, interaction delivery, scope/privacy and permissions; asks for keys with hidden input; and shows policy/caps before saving. Fresh installations default to reporting only. New explicit-channel policies support selected public/private ordinary text channels without mandatory category setup; optional category boundaries still apply. Migrated policies and action switches are preserved.
+
+Portable credentials use private owner-only files outside Git checkouts, without environment-key fallback. The fresh Linux system installer provisions a dedicated account, root-owned code and a hardened systemd unit. It defaults to host-encrypted systemd credentials; a root-only plaintext backend requires an explicit option. Rotation uses hidden prompts and a controlled restart. Cancelled, unpublished installations are rolled back; published data is retained after an uncertain/failed service start. The stopped-profile migration uses SQLite backup, preserves the full audit/history/flags/accounting, copies only required keys, and leaves the source policy/history in place. A changed database path deliberately makes old evidence historical; no old proposals/actions are replayed. See docs/standalone.md for operating instructions and limits.
+
+Validation: 496 core/setup + 229 existing Hermes/Discord integration + 9 standalone tests passed (734 unique tests). The final wheel was installed in a new Python 3.11.16 environment containing no Hermes modules. All 27 new setup/service/migration tests and 9 standalone SDK/lifecycle tests also passed against the installed wheel under Python isolated mode. All 54 package modules match source, wheel and installed files byte-for-byte; self-test is 9/9. A unit syntax check passed with its future installed interpreter path substituted by an existing interpreter. Root account creation/systemctl/encryption calls are mocked in installer tests; no live system installation or migration was performed.
+
+Artifact: dist/liberdus_discord_moderator-0.6.0-py3-none-any.whl. SHA-256: 35ccf9dd0e7fadecd5b435384d51276b922438329cb8b83413355db9db27427e. Verification record: /tmp/mod-standalone-060-verification.json. Private pre-change source snapshot: /tmp/mod-before-standalone-20260922.tar.gz. Final guide: docs/standalone.md.
+
+The live plugin remains 0.5.16; no gateway restart, live Discord post/deletion, paid JEV call, production credential read/copy, or production policy/database change occurred for this implementation. A read-only status check found the existing gateway running under PID 1574450. Deployment/cutover is a separate next step. Source changes, including earlier 0.5.x work, remain local and uncommitted/unpushed; preserve them.
+
+## 10.53 Publication review and fresh database on a new VPS
+
+The owner authorized reviewing and pushing the accumulated changes, and explicitly
+chose another VPS with a fresh database. This supersedes transferring the existing
+history and spending counters for that deployment. The live Hermes moderator stays
+active until the owner performs the separate cutover.
+
+The source review covered standalone/Hermes service separation, Discord scope and
+action checks, hidden credential entry, private files and locks, systemd credential
+publication, cancelled installs, shutdown and safe logging. No blocking source
+issue was identified. A scan of the repository's tracked and nonignored candidate
+files found no private-key, Discord-token, GitHub-token, provider-key, or
+authenticated-URL patterns. This is a targeted scan, not a guarantee about every
+possible secret format.
+
+All 734 tests passed again: 496 core/setup, 229 Hermes/Discord integration, and 9
+standalone. A rebuilt wheel matches all 54 source modules; its installed standalone
+runtime tests also pass under Python isolated mode without Hermes. The systemd
+unit passed syntax validation using an existing interpreter in place of its future
+installed path. Actual root service creation/encryption remains covered by mocked
+installer tests; final host and live connectivity checks must run on the new VPS.
+No live credential read, Discord write, paid JEV call, policy/database mutation or
+gateway restart was performed during this review.
+
+Added docs/new-vps.md with Ubuntu setup commands, encrypted service installation
+without starting, exact Liberdus channel/operator IDs, action option 3, the existing
+category boundaries, and old/new host cutover commands. It explains the fresh
+database's empty history, unavailable old review bindings, reset local spending
+counters and lack of history backfill. Only the two moderation credentials are
+reused. README and the handoff link this path; the database-preserving migration
+remains available for other installations.
+
+Publication-review wheel:
+`/tmp/liberdus-standalone-publish-dist/liberdus_discord_moderator-0.6.0-py3-none-any.whl`.
+SHA-256: `24f8758bc2e3b48ffa7de9f5c8dcd042e8c11f09c979b29fff90caaff121b946`.
+Its code is identical to the implementation wheel above; the packaged README now
+links the fresh-VPS guide. The accumulated source/tests/docs are included in the
+owner-authorized publication commit. The new VPS has not been deployed.

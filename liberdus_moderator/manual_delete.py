@@ -3,7 +3,7 @@ import re
 
 from . import actions
 from .display import panel
-from .evidence_view import code_excerpt, units, validated_evidence
+from .evidence_view import excerpt, units, validated_evidence
 from .staff_review import digest, saved_assessment, snapshot
 
 
@@ -111,15 +111,15 @@ def confirmation(engine, payload):
     for index, item in enumerate(items, 1):
         url = f"https://discord.com/channels/{item['guild_id']}/{item['channel_id']}/{item['message_id']}"
         label = 'CHANGED since saved report' if item['message_id'] in payload['changed_messages'] else 'Matches saved text'
-        headings.append(f"\n[Message {index}](<{url}>) — {label}\n```\n")
+        headings.append(f"\n\n### Message {index} — {label}\n[Open message {index}](<{url}>)\n> ")
     footer = '\nText excerpts; open links for full messages. Confirm only the current content shown.'
     available = (1850 - units(base + footer + ''.join(headings)) - len(items)*5) // len(items)
     if available < 64:
         raise actions.ActionError('Select one message for a readable confirmation: !mod delete ID REV MESSAGE_ID')
     text = base
     for heading, item in zip(headings, items):
-        preview, _ = code_excerpt(item['content'], min(available, 450))
-        text += heading + (preview or '(empty text)') + '\n```'
+        preview, _ = excerpt(item['content'], min(available, 450))
+        text += heading + (preview or '(empty text)') + '\n'
     text += footer
     if units(text) > 1900:
         raise actions.ActionError('Select one message for a readable confirmation: !mod delete ID REV MESSAGE_ID')

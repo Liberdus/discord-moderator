@@ -135,13 +135,17 @@ class ActionTests(unittest.TestCase):
         self.engine.process(event)
         with self.assertRaises(actions.ActionError): actions.consume(self.engine,p['token'],'98','20','700')
 
-    def test_auto_rule_strict_threshold_context_scope_and_flags(self):
+    def test_auto_rule_inclusive_threshold_context_scope_and_flags(self):
         self.command('deletion',('on',));self.command('auto-delete',('on',))
         incident={**self.incident,'rule_id':'jev_message','evidence':self.incident['evidence'][:1]}
         baseline=dict(evidence_state='current',choice='sensitive_request',confidence=.91,purpose='other',age_seconds=0)
-        for change,expected in [({},True),({'confidence':.90},False),({'choice':'impersonation'},False),
+        for change,expected in [({},True),({'confidence':.90},True),({'confidence':.89999},False),
+                                ({'choice':'impersonation'},True),({'choice':'suspicious_offer'},True),
+                                ({'choice':'targeted_abuse'},True),({'choice':'none'},False),
+                                ({'choice':'unclear'},False),({'choice':'future_label'},False),
                                 ({'purpose':'quoted_warning'},False),({'purpose':'unclear'},False),
-                                ({'evidence_state':'historical'},False),({'age_seconds':61},False)]:
+                                ({'evidence_state':'historical'},False),({'age_seconds':61},False),
+                                ({'age_seconds':None},False),({'age_seconds':-1},False)]:
             with patch('liberdus_moderator.screening.saved_screening',return_value={**baseline,**change}):
                 self.assertEqual(actions.automatic_candidate(self.engine,incident),expected)
         self.command('deletion',('off',))
@@ -171,13 +175,22 @@ class ActionTests(unittest.TestCase):
     def test_status_help_and_action_request_have_no_network_effects(self):
         for i,name in enumerate(('help','status','timeout','auto-delete','deletion')):
             text=self.live.command(CommandRequest('1','20','98',name),str(800+i),True)
-            self.assertIn('```',text)
+            self.assertTrue(text.startswith('## '))
+            self.assertNotIn('```',text)
             self.assertLess(len(text),1900)
         self.command('deletion',('on',))
         text=self.live.command(CommandRequest('1','20','98','delete',arguments=(self.identity,'1')),'900',True)
         from liberdus_moderator.manual_delete import DeleteRequest
         self.assertIsInstance(text, DeleteRequest)
         self.assertFalse(actions.history(self.engine,self.identity))
+
+    def test_auto_delete_setting_explains_the_approved_rule(self):
+        text=self.live.command(CommandRequest('1','20','98','auto-delete'),'auto-settings',True)
+        self.assertIn('Auto-delete score: >= 0.90',text)
+        for label in ('Sensitive requests','impersonation','suspicious offers','targeted abuse'):
+            self.assertIn(label,' '.join(text.split()))
+        self.assertIn('Quoted warnings',' '.join(text.split()))
+        self.assertFalse(actions.enabled(self.engine,'auto_delete'))
 
 
 class MessageComparisonTests(unittest.TestCase):

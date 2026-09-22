@@ -1,3 +1,4 @@
+from layout_helpers import visible_text
 """Role-cache and edit races with real SDK metadata; network edges stay mocked."""
 import asyncio
 from dataclasses import replace
@@ -50,14 +51,14 @@ class RoleActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(membership_roles(member,1),('1','77'))
         message=await self.missing_roles_screening()
         message.delete.assert_not_awaited()
-        self.assertIn('currently has an exempt role',' '.join(self.channel.send.call_args.args[0].split()))
+        self.assertIn('currently has an exempt role',' '.join(visible_text(self.channel.send.call_args).split()))
         self.assertFalse(self.adapter.store.db.execute('SELECT 1 FROM action_attempts_v1').fetchone())
 
     async def test_unknown_membership_field_blocks_auto_delete(self):
         del self.member._roles
         message=await self.missing_roles_screening()
         message.delete.assert_not_awaited()
-        self.assertIn('roles unavailable',' '.join(self.channel.send.call_args.args[0].split()))
+        self.assertIn('roles unavailable',' '.join(visible_text(self.channel.send.call_args).split()))
 
     async def test_uncached_target_role_blocks_timeout_before_http(self):
         member,state=self.sdk_member((77,))

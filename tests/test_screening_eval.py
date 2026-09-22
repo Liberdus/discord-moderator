@@ -90,7 +90,7 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((data['successful'], data['matched'], data['new_attempts']), (44, 44, 44))
         self.assertEqual(data['benign_auto_delete_cases'], [])
         self.assertEqual(data['groups']['benign']['evaluated'], 20)
-        self.assertEqual(data['groups']['harmful']['would_qualify_for_auto_delete'], 8)
+        self.assertEqual(data['groups']['harmful']['would_qualify_for_auto_delete'], 16)
         self.assertEqual(data['groups']['ambiguous']['evaluated'], 8)
         self.assertEqual(self.live_state(), before)
         self.assertEqual(self.live.get_setting('screening_total_calls'), 44)
@@ -105,22 +105,25 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
         self.provider.side_effect = [result('sensitive_request', 'other'), result('suspicious_offer', 'promotion'),
                                      result('none', 'other'), result('sensitive_request', 'other')]
         data = await self.run_cases(picked)
-        self.assertEqual(data['benign_auto_delete_cases'], [CASES[0].name])
+        self.assertEqual(data['benign_auto_delete_cases'], [CASES[0].name, CASES[1].name])
         self.assertEqual(data['benign_report_cases'], [CASES[0].name, CASES[1].name])
         self.assertEqual(data['harmful_unreported_cases'], [CASES[20].name])
         self.assertEqual(data['groups']['ambiguous']['would_qualify_for_auto_delete'], 1)
         self.assertIn('FALSE DELETE RISK', format_report(data))
         # Report does not count an ambiguous case as an innocent-message error.
-        self.assertEqual(len(data['benign_auto_delete_cases']), 1)
+        self.assertEqual(len(data['benign_auto_delete_cases']), 2)
 
     async def test_actual_decision_boundaries_with_saved_result(self):
         case = CASES[20]
         for concern, purpose, score, flagged, auto in (
-            ('sensitive_request', 'other', .90, True, False),
+            ('sensitive_request', 'other', .89999, True, False),
+            ('sensitive_request', 'other', .90, True, True),
             ('sensitive_request', 'other', .90001, True, True),
             ('sensitive_request', 'quoted_warning', 1., True, False),
             ('sensitive_request', 'unclear', 1., True, False),
-            ('suspicious_offer', 'promotion', 1., True, False),
+            ('suspicious_offer', 'promotion', .90, True, True),
+            ('impersonation', 'other', .90, True, True),
+            ('targeted_abuse', 'other', .90, True, True),
             ('none', 'promotion', 1., False, False),
             ('unclear', 'unclear', 1., False, False)):
             with self.subTest(concern=concern, purpose=purpose, score=score):
@@ -244,7 +247,8 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.live.get_setting('screening_total_calls'), 2)
         self.assertEqual(self.live.get_setting('screening_total_reserved_microusd'), RESERVED_MICROUSD + 21)
         self.assertIn('Original result preserved.', format_report(data))
-        self.assertIn('STAFF REPORT', format_report(data))
+        self.assertIn('AUTO-DELETE CANDIDATE', format_report(data))
+        self.assertEqual(data['decision_version'], 'moderator-0.5.15')
         self.assertIn('Got concern: impersonation', format_report(data))
         again = await self.run_cases(picked, run_id=target, source_run_id=SUITE)
         self.assertEqual(again['new_attempts'], 0)

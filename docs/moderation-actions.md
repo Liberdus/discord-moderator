@@ -1,3 +1,5 @@
+> **0.5.15 auto-delete rule:** the owner approved all four specific concerns at scores **>=0.90**, retaining context, freshness, permission and execution checks. See [current automatic-deletion scope](auto-delete-scope.md). The narrower rules below describe the original releases.
+
 > **0.5.8 public-deletion opt-in:** the owner requested deletion in the seven approved Community channels. See [installation and controls](public-deletion.md). The historical observation/action instructions below describe their original releases.
 
 > **0.5.4 safety update:** [stop controls, role verification and timeout protections](review-fixes.md) address the subsequent code review findings. The full protected permission set is listed there. Existing feature flags are preserved.

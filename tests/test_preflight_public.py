@@ -67,15 +67,25 @@ class PublicPreflightTests(unittest.TestCase):
         self.assertFalse(report["channels"][1]["everyone_hidden"])
         self.assertTrue(report["channels"][1]["private_required"])
 
-    def test_excluded_category_denies_monitor_and_command(self):
+    def test_excluded_category_denies_monitor_but_allows_private_command_destination(self):
         for channel in ("10", "20"):
             with self.subTest(channel=channel):
                 self.metadata[f"/channels/{channel}"]["parent_id"] = "40"
                 report = inspect(self.config, self.get)
-                self.assertFalse(report["checks_passed"])
+                self.assertEqual(report["checks_passed"], channel == "20")
                 row = next(row for row in report["channels"] if row["channel_id"] == channel)
-                self.assertFalse(row["category_allowed"])
+                self.assertEqual(row["category_allowed"], channel == "20")
                 self.metadata[f"/channels/{channel}"]["parent_id"] = "30"
+
+    def test_command_exception_keeps_privacy_and_bot_permission_requirements(self):
+        self.metadata['/channels/20']['parent_id'] = '40'
+        original = deepcopy(self.metadata['/channels/20']['permission_overwrites'])
+        for denied in (VIEW, HISTORY, SEND):
+            self.metadata['/channels/20']['permission_overwrites'] = original + [
+                {'id':'99', 'type':1, 'allow':'0', 'deny':str(denied)}]
+            self.assertFalse(inspect(self.config, self.get)['checks_passed'])
+        self.metadata['/channels/20']['permission_overwrites'] = []
+        self.assertFalse(inspect(self.config, self.get)['checks_passed'])
 
     def test_known_uncategorized_channels_allowed(self):
         for channel in ("10", "20"):

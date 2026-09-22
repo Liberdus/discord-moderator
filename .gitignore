@@ -4,6 +4,10 @@
 !.env.example
 config.local.toml
 secrets/
+credentials/
+instance.json
+moderation.toml
+*.cred
 *.pem
 *.key
 

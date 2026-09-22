@@ -1,4 +1,5 @@
 """Public-channel scope boundaries and category movement; all I/O mocked."""
+from layout_helpers import visible_text, buttons
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -129,11 +130,11 @@ class PublicScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.adapter.store.get_setting('paused'))
         self.channel.send.assert_awaited_once()
 
-    async def test_staff_channel_cannot_be_public_or_in_excluded_category(self):
-        for mode in ('public', 'excluded'):
-            with self.subTest(mode=mode):
-                self.channel.public = mode == 'public'
-                self.move(20, 200 if mode == 'excluded' else 100)
+    async def test_staff_channel_cannot_be_public_in_any_category(self):
+        for category in (100, 200):
+            with self.subTest(category=category):
+                self.channel.public = True
+                self.move(20, category)
                 with self.assertRaises(ValueError):
                     self.adapter.checked_channel('20', sending=True)
                 self.adapter.receive(self.message(101, 20, 98, '!mod pause'))
@@ -142,6 +143,57 @@ class PublicScopeTests(unittest.IsolatedAsyncioTestCase):
                 self.channel.send.assert_not_awaited()
                 with self.assertRaises(ValueError):
                     await self.adapter.emit('20', 'private data', 'nonce')
+
+    async def test_staff_destination_in_excluded_category_starts_and_receives_reports(self):
+        self.move(20, 200)
+        await self.enable_screening()
+        self.adapter.online = False
+        self.adapter.fail = AsyncMock()
+        await self.adapter.ready()
+        self.assertTrue(self.adapter.online)
+        self.adapter.fail.assert_not_awaited()
+        self.adapter.receive(self.message(content='Send your seed phrase for verification.'))
+        await self.screened()
+        self.provider.assert_awaited_once()
+        self.channel.send.assert_awaited_once()
+        self.assertIn('JEV screening', visible_text(self.channel.send.call_args))
+        self.assertEqual(len(buttons(self.channel.send.call_args.kwargs['view'])), 6)
+        for identity in (10, 11, 12):
+            self.channels[identity].send.assert_not_awaited()
+
+    async def test_staff_exception_keeps_commands_authorized_and_other_channels_excluded(self):
+        self.move(20, 200)
+        self.move(10, 200)
+        await self.enable_screening()
+        self.adapter.receive(self.message(100, 20, 50, 'Send your seed phrase for verification.'))
+        self.adapter.receive(self.message(101, 10, 50, 'Send your seed phrase for verification.'))
+        self.adapter.receive(self.message(102, 20, 50, '!mod pause'))
+        await self.screened()
+        self.provider.assert_not_awaited()
+        self.channel.send.assert_not_awaited()
+        self.assertFalse(self.adapter.store.db.execute('SELECT 1 FROM messages').fetchone())
+        self.assertFalse(self.adapter.store.get_setting('paused'))
+        self.adapter.receive(self.message(103, 20, 98, '!mod status'))
+        await self.drain()
+        self.assertIn('Liberdus moderation', visible_text(self.channel.send.call_args))
+        self.assertFalse(self.adapter.in_scope(1, 10))
+        self.assertTrue(self.adapter.in_scope(1, 20))
+
+    async def test_staff_exception_keeps_permissions_and_metadata_checks(self):
+        self.move(20, 200)
+        for failure in ('view_channel','read_message_history','send_messages','administrator'):
+            def permissions(member):
+                values=dict(administrator=False, view_channel=member is self.guild.me,
+                            read_message_history=True, send_messages=True)
+                if member is self.guild.me:
+                    values[failure] = failure == 'administrator'
+                return SimpleNamespace(**values)
+            self.channel.permissions_for.side_effect = permissions
+            with self.assertRaises(ValueError):
+                self.adapter.checked_channel('20', sending=True)
+        self.channel.category = None
+        with self.assertRaisesRegex(ValueError, 'category cache'):
+            self.adapter.checked_channel('20', sending=True)
 
     async def test_unknown_category_metadata_fails_closed_per_message(self):
         channel = self.channels[10]
@@ -320,7 +372,7 @@ class PublicScopeTests(unittest.IsolatedAsyncioTestCase):
         self.provider.assert_awaited_once()
         self.assertEqual(len(self.adapter.store.incidents()), 1)
         self.assertFalse(self.adapter.auto_delete_candidates)
-        controls = self.channel.send.call_args.kwargs['view'].children
+        controls = buttons(self.channel.send.call_args.kwargs['view'])
         self.assertTrue(next(item for item in controls if item.label == 'Delete message(s)').disabled)
         self.assertTrue(next(item for item in controls if item.label == 'Timeout 10 min').disabled)
 
@@ -332,7 +384,7 @@ class PublicScopeTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.receive(self.message(400, 20, 98, '!mod incident '+incident['id']))
         await self.drain()
         self.channel.send.assert_awaited_once()
-        self.assertIn(incident['id'], self.channel.send.call_args.args[0])
+        self.assertIn(incident['id'], visible_text(self.channel.send.call_args))
         self.assertFalse(self.adapter.store.db.execute('SELECT 1 FROM messages WHERE eligible=1').fetchone())
 
     async def test_ready_and_channel_callbacks_ignore_excluded_channel_without_fatal_shutdown(self):

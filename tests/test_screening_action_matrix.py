@@ -16,7 +16,7 @@ class ScreeningActionMatrixTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_concerns_purposes_and_score_boundaries(self):
         for concern in CONCERN['criteria']:
             for purpose in RUBRIC['criteria']:
-                for confidence in (0.0, .89, .90, .90001, .99, 1.0):
+                for confidence in (0.0, .89, .89999, .90, .90001, .99, 1.0):
                     with self.subTest(concern=concern,purpose=purpose,confidence=confidence), Store(':memory:') as store:
                         engine=Engine(replace(config(),actions_enabled=True),store,clock=lambda:1000.)
                         actions.initialize(engine)
@@ -33,7 +33,8 @@ class ScreeningActionMatrixTests(unittest.IsolatedAsyncioTestCase):
                             incidents=store.incidents()
                             self.assertEqual(bool(incidents),concern in FLAGGED)
                             actual=bool(incidents and actions.automatic_candidate(engine,store.incident(incidents[0]['id'])))
-                            expected=(concern=='sensitive_request' and confidence>.90
+                            expected=(concern in ('sensitive_request','impersonation','suspicious_offer','targeted_abuse')
+                                      and confidence>=.90
                                       and purpose not in ('quoted_warning','unclear'))
                             self.assertEqual(actual,expected)
                         finally:

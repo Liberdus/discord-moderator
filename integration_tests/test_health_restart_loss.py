@@ -1,3 +1,4 @@
+from layout_helpers import visible_text
 """Actual restart recovery rows drive notices; no provider or Discord network I/O."""
 import time
 import unittest
@@ -60,7 +61,7 @@ class RestartLossHealthTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.online = True
         await self.adapter.flush_health()
         self.channel.send.assert_awaited_once()
-        text = self.channel.send.call_args.args[0]
+        text = visible_text(self.channel.send.call_args)
         self.assertIn('coverage interruption', text)
         self.assertIn('restart', text.lower())
         self.assertNotIn('screening recovered', text)

@@ -1,3 +1,4 @@
+from layout_helpers import visible_text
 """Live observer wiring and private delivery; provider/Discord network edges mocked."""
 import asyncio
 from dataclasses import replace
@@ -49,7 +50,7 @@ class HealthReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.adapter.store.get_setting('screening_unchecked'),3)
         await self.adapter.flush_health()
         self.channel.send.assert_awaited_once()
-        content = self.channel.send.call_args.args[0]
+        content = visible_text(self.channel.send.call_args)
         self.assertIn('coverage alert',content)
         self.assertNotIn('SECRET',content)
         self.adapter.client.get_channel.assert_called_with(20)
@@ -73,7 +74,7 @@ class HealthReportingTests(unittest.IsolatedAsyncioTestCase):
         self.now += 301
         await self.adapter.flush_health()
         self.assertEqual(self.channel.send.await_count,2)
-        self.assertIn('screening recovered',self.channel.send.call_args.args[0])
+        self.assertIn('screening recovered',visible_text(self.channel.send.call_args))
         self.assertEqual(self.provider.await_count,4)
 
     async def test_stale_or_duplicate_result_does_not_claim_recovery(self):
@@ -106,7 +107,7 @@ class HealthReportingTests(unittest.IsolatedAsyncioTestCase):
         store.set_setting('screening_daily_calls',100)
         store.set_setting('screening_total_calls',100)
         await self.adapter.flush_health()
-        self.assertIn('Daily screening call limit',self.channel.send.call_args.args[0])
+        self.assertIn('Daily screening call limit',visible_text(self.channel.send.call_args))
         self.provider.assert_not_awaited()
         self.assertEqual(store.get_setting('screening_total_calls'),100)
 
@@ -116,7 +117,7 @@ class HealthReportingTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_not_awaited()
         await self.adapter.ready()
         await self.adapter.flush_health()
-        text = self.channel.send.call_args.args[0]
+        text = visible_text(self.channel.send.call_args)
         self.assertIn('Discord connection restored',text)
         self.assertIn('Discord disconnected',text)
         self.assertIn('not backfilled',' '.join(text.split()))
@@ -187,14 +188,14 @@ class HealthReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.adapter.store.get_setting('screening_unchecked'), 3)
         await self.adapter.flush_health()
         self.assertIn('local screening rate limit',
-                      ' '.join(self.channel.send.call_args.args[0].split()))
+                      ' '.join(visible_text(self.channel.send.call_args).split()))
         self.provider.assert_not_awaited()
 
     async def test_summary_command_uses_private_auth_without_model_calls(self):
         self.adapter.receive(self.message(900,20,98,'!mod summary'))
         await self.drain()
-        self.assertIn('Moderation summary',self.channel.send.call_args.args[0])
-        self.assertLessEqual(len(self.channel.send.call_args.args[0].encode('utf-16-le'))//2,2000)
+        self.assertIn('Moderation summary',visible_text(self.channel.send.call_args))
+        self.assertLessEqual(len(visible_text(self.channel.send.call_args).encode('utf-16-le'))//2,2000)
         self.channel.send.reset_mock()
         self.adapter.receive(self.message(901,20,50,'!mod summary'))
         await self.drain()

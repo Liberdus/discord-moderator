@@ -106,8 +106,7 @@ def selection(config, report, excluded, included=INCLUDED_CATEGORIES):
     for row in report['channels']:
         identity = row['channel_id']
         if identity in config.command_channel_ids:
-            command_ok = (row['type'] == 0 and row['category_id'] not in excluded
-                          and not row['everyone_visible'] and not row['bot_administrator']
+            command_ok = (row['type'] == 0 and not row['everyone_visible'] and not row['bot_administrator']
                           and row['bot_view'] and row['bot_history'] and row['bot_send'])
             omitted.append(dict(channel_id=identity, name=row['name'], reason='private_commands_and_reports'))
         elif identity in TEST_CHANNELS:
@@ -125,7 +124,7 @@ def selection(config, report, excluded, included=INCLUDED_CATEGORIES):
         else:
             selected.append(dict(channel_id=identity, name=row['name'], category_id=row['category_id']))
     if not command_ok:
-        raise RolloutError('bot-mod must remain private, outside excluded categories, and readable/writable without Administrator.')
+        raise RolloutError('bot-mod must remain private and readable/writable without Administrator.')
     if blocked:
         # Channel IDs/names are separately visible in inventory; avoid hiding partial coverage.
         raise RolloutError('Some selected text channels lack bot View Channel/Read Message History, or grant Administrator. Blocked channel IDs: ' + ', '.join(row['channel_id'] for row in blocked) + '. Run inventory to check these channels.')
@@ -199,8 +198,8 @@ def apply_plan(profile, get, *, now=None, enable_deletion=False):
     if (any(data.get('platforms', {}).get('discord', {}).get('enabled') is not False for data in (default, local))
             or local.get('platforms', {}).get('liberdus_moderator', {}).get('enabled') is not False):
         raise RolloutError('Disable the moderation platform and finish the gateway restart first.')
-    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.5.9':
-        raise RolloutError('Install the reviewed 0.5.9 plugin while disabled before applying scope.')
+    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.6.0':
+        raise RolloutError('Install the reviewed 0.6.0 plugin while disabled before applying scope.')
     lock = os.open(paths[3], os.O_RDWR | os.O_NOFOLLOW)
     try:
         try:

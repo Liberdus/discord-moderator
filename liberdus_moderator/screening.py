@@ -114,6 +114,9 @@ class MessageScreener(ShadowClassifier):
                 "started_at REAL NOT NULL,finished_at REAL,day INTEGER NOT NULL,outcome TEXT NOT NULL,"
                 "result_json TEXT,latency_ms INTEGER,incident_id TEXT)")
             self.store.db.execute("CREATE INDEX IF NOT EXISTS screening_incident ON screening_attempts_v1(incident_id)")
+            self.store.db.execute("CREATE TABLE IF NOT EXISTS screening_failures_v1("
+                "attempt_key TEXT PRIMARY KEY REFERENCES screening_attempts_v1(key) ON DELETE CASCADE,"
+                "diagnostic TEXT NOT NULL)")
             self.store.set_setting("screening_schema_version", 1)
             lost = self.store.db.execute("UPDATE screening_attempts_v1 SET outcome='uncertain' "
                                          "WHERE outcome IN ('running','awaiting_apply')").rowcount
@@ -261,7 +264,7 @@ class MessageScreener(ShadowClassifier):
             self.store.set_setting("screening_last_attempt_at", now)
         return True, None
 
-    def finish(self, job, outcome, started, result=None):
+    def finish(self, job, outcome, started, result=None, *, diagnostic=None):
         with self.store.transaction():
             row = self.store.db.execute("SELECT * FROM screening_attempts_v1 WHERE key=?", (job.key,)).fetchone()
             if row is None or row["outcome"] != "running":
@@ -277,17 +280,23 @@ class MessageScreener(ShadowClassifier):
             self.store.db.execute("UPDATE screening_attempts_v1 SET finished_at=?,outcome=?,result_json=?,latency_ms=? WHERE key=?",
                 (self.engine._now(), outcome, encoded(result).decode() if result else None,
                  max(0, int((time.monotonic() - started) * 1000)), job.key))
+            if diagnostic is not None:
+                from .screening_diagnostics import DIAGNOSTIC_CODES
+                if type(diagnostic) is str and diagnostic in DIAGNOSTIC_CODES:
+                    self.store.db.execute("INSERT INTO screening_failures_v1 VALUES(?,?)", (job.key, diagnostic))
             self.state(outcome)
             if outcome != "awaiting_apply":
                 self.bump("unchecked")
 
     async def evaluate_one(self, job):
+        from .screening_diagnostics import failure_diagnostic, validate_evaluation
         if not self.current(job):
             self.bump("unchecked")
             return
         if not self.reserve(job):
             return
         started = time.monotonic()
+        phase = "request"
         self.next_attempt_at = started + self.settings.min_interval_seconds
         try:
             async def invoke():
@@ -295,10 +304,11 @@ class MessageScreener(ShadowClassifier):
                     raise ValueError("stale")
                 return await self.evaluator(job.payload)
             raw = await asyncio.wait_for(invoke(), self.settings.timeout_seconds)
-            result = validate_screening(raw)
+            phase = "validation"
+            result = validate_evaluation(raw)
             if result["input_tokens"] > RESERVED_INPUT_TOKENS:
                 self.store.set_setting("screening_billing_guard", True)
-                self.finish(job, "usage_exceeds_reservation", started)
+                self.finish(job, "usage_exceeds_reservation", started, diagnostic="usage.reservation")
                 self.notify_health("usage_exceeds_reservation")
                 return
             self.finish(job, "awaiting_apply", started, result)
@@ -306,11 +316,11 @@ class MessageScreener(ShadowClassifier):
             # All incident mutations/report delivery stay in its serialized event worker.
             self.on_result(job)
         except asyncio.CancelledError:
-            self.finish(job, "uncertain", started)
+            self.finish(job, "uncertain", started, diagnostic="request.interrupted")
             self.notify_health("uncertain")
             raise
         except TimeoutError:
-            self.finish(job, "timeout", started)
+            self.finish(job, "timeout", started, diagnostic="request.timeout")
             self.notify_health("timeout")
         except Exception as error:
             from .jev import ProviderError
@@ -318,7 +328,9 @@ class MessageScreener(ShadowClassifier):
             if code not in {"missing_key", "authentication_failed", "access_denied", "rate_limited",
                             "provider_overloaded", "http_error", "response_too_large", "invalid_json"}:
                 code = "provider_or_response_error"
-            self.finish(job, code, started)
+            # Keep existing outcomes/health routing; retain only a fixed error code.
+            _, diagnostic = failure_diagnostic(error, phase)
+            self.finish(job, code, started, diagnostic=diagnostic)
             self.notify_health(code)
             if code in {"missing_key", "authentication_failed", "access_denied"}:
                 self.provider_blocked = True  # Correct credentials and restart; no repeated failed calls.

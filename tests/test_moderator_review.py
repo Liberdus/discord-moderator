@@ -58,9 +58,9 @@ class ModeratorReviewTests(unittest.TestCase):
         self.assertEqual(lookup["classification"], {"outcome": "not_evaluated"})
         self.assertEqual(lookup["moderator_review"]["label"], "not_promotion")
         rendered = self.live.command(replace(self.lookup, command="explain"), "900", True)
-        self.assertIn("LEGACY CONTENT LABEL", rendered)
+        self.assertIn("Legacy content label", rendered)
         self.assertIn("Not promotion", rendered)
-        self.assertIn("Staff     : Not reviewed", rendered)
+        self.assertIn("**Not reviewed** · Pending", rendered)
         self.assertIn("Friday maintenance", rendered)
         self.assertIn("Open message 1", rendered)
         self.assertLessEqual(units(rendered), 1900)
@@ -196,7 +196,8 @@ class ModeratorReviewTests(unittest.TestCase):
         identity = store.incidents()[0]["id"]
         request = replace(self.lookup, arguments=(identity,))
         rendered = live.command(request, "907", True)
-        self.assertEqual(rendered.count("```"), 4)
+        self.assertNotIn("```", rendered)
+        self.assertIn("\\`\\`\\`", rendered)
         self.assertNotIn("@everyone", rendered)
         self.assertNotIn("<@123>", rendered)
         self.assertNotIn("https://evil.example", rendered)
@@ -231,12 +232,11 @@ class ModeratorReviewTests(unittest.TestCase):
         text = format_incident(incident)
         self.assertLessEqual(units(format_incident(incident, details=True)), 1900)
         self.assertLessEqual(units(text), 1900)
-        self.assertIn("SAVED MESSAGE", text)
+        self.assertIn("### Saved message", text)
         self.assertIn("😀", text)
         self.assertIn("Open message 3", text)
-        panel = text.split("```")[1]
-        self.assertTrue(panel.isascii())
-        self.assertTrue(all(len(line) <= 32 for line in panel.splitlines()))
+        self.assertIn("### Saved message\n> ", text)
+        self.assertNotIn("```", text)
 
     def test_out_of_scope_or_malformed_saved_evidence_is_not_exposed_or_reviewed(self):
         incident = self.store.incident(self.incident)

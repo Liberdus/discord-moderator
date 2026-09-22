@@ -57,7 +57,8 @@ class HealthTests(unittest.TestCase):
         self.assertRegex(notice['token'], '^[a-f0-9]{32}$')
         self.assertRegex(notice['nonce'], '^[a-f0-9]{24}$')
         self.assertLess(len(notice['content']), 1900)
-        self.assertIn('```', notice['content'])
+        self.assertTrue(notice['content'].startswith('## '))
+        self.assertNotIn('```', notice['content'])
         self.assertIn('3 checks failed or were skipped within 5 minutes', self.text(notice))
         self.assertIsNone(self.monitor.claim(True))
 

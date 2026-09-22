@@ -2,11 +2,12 @@
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
 
 import discord
+from layout_helpers import visible_text, buttons, payload_text
 import test_hermes_adapter as existing
 from test_message_screening import response
 from liberdus_moderator import actions
@@ -265,7 +266,10 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record['outcome'],'done')
         self.assertEqual(record['automatic'],1)
         self.assertEqual(record['target_id'],str(message.id))
-        self.assertIn('done',self.channel.send.call_args.args[0])
+        notice = visible_text(self.channel.send.call_args)
+        self.assertIn('1 message deleted', notice)
+        self.assertIn('Automatic moderation', notice)
+        self.assertIn('**Sender:** <@50>', notice)
 
     async def test_manual_delete_through_real_sdk_method_reaches_http_once(self):
         message,http_delete=self.sdk_message()
@@ -323,13 +327,13 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.member._roles=[77]
         message=await self.missing_roles_screening()
         message.delete.assert_not_awaited()
-        self.assertIn('currently has an exempt role',' '.join(self.channel.send.call_args.args[0].split()))
+        self.assertIn('currently has an exempt role',' '.join(visible_text(self.channel.send.call_args).split()))
 
     async def test_unavailable_membership_is_not_auto_deleted(self):
         self.guild.fetch_member.side_effect=TimeoutError
         message=await self.missing_roles_screening()
         message.delete.assert_not_awaited()
-        self.assertIn('roles unavailable',' '.join(self.channel.send.call_args.args[0].split()))
+        self.assertIn('roles unavailable',' '.join(visible_text(self.channel.send.call_args).split()))
 
     async def test_wrong_member_identity_is_not_auto_deleted(self):
         self.member.id=51
@@ -361,37 +365,39 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
         state=Mock();state.allowed_mentions=discord.AllowedMentions.none()
         state._get_guild.return_value=None
         state.store_user.side_effect=lambda data, **kw:discord.User(state=state,data=data)
-        webhook=discord.Webhook(dict(id='99',type=3,token='synthetic',channel_id='20'),session=Mock(),state=state)
+        state.http.proxy=state.http.proxy_auth=None
         result=dict(id='701',channel_id='20',type=0,content='result',attachments=[],embeds=[],
             edited_timestamp=None,tts=False,pinned=False,mention_everyone=False,mentions=[],mention_roles=[],
             author=dict(id='99',username='testbot',discriminator='0',avatar=None,bot=True))
-        transport=SimpleNamespace(execute_webhook=AsyncMock(return_value=result))
+        transport=SimpleNamespace(edit_original_interaction_response=AsyncMock(return_value=result))
         token=async_context.set(transport)
         try:
-            interaction=SimpleNamespace(followup=webhook)
+            interaction=SimpleNamespace(application_id=99,token='synthetic',_session=Mock(),_state=state,channel=self.channel)
+            interaction.edit_original_response=MethodType(discord.Interaction.edit_original_response,interaction)
             await self.adapter.interaction_notice(interaction,content,deferred=True)
         finally:
             async_context.reset(token)
-        transport.execute_webhook.assert_awaited_once()
-        return transport.execute_webhook.call_args.kwargs
+        transport.edit_original_interaction_response.assert_awaited_once()
+        return transport.edit_original_interaction_response.call_args.kwargs
 
-    async def test_plain_completion_uses_actual_webhook_without_empty_view(self):
+    async def test_completion_edits_actual_ephemeral_response_as_card(self):
         from liberdus_moderator.display import panel
         for title in ('Staff action result','Action cancelled','Staff assessment saved'):
             sent=await self.sdk_notice(panel(title,['Completed.']))
-            self.assertFalse(sent['with_components'])
-            self.assertTrue(sent['wait'])
-            self.assertEqual(sent['payload']['flags'] & 64,64)
+            self.assertEqual(sent['payload']['flags'] & (1 << 15),1 << 15)
+            self.assertIsNone(sent['payload']['content'])
+            self.assertEqual(sent['payload']['embeds'],[])
+            self.assertEqual(sent['payload']['attachments'],[])
             self.assertEqual(sent['payload']['allowed_mentions']['parse'],[])
-            self.assertIn(title,sent['payload']['content'])
-            self.assertIn('```',sent['payload']['content'])
+            self.assertIn(title,payload_text(sent['payload']))
+            self.assertNotIn('```',payload_text(sent['payload']))
 
     async def test_confirmation_uses_actual_webhook_and_binds_returned_message(self):
         incident=self.pattern();self.toggle('deletion')
         content=actions.propose(self.adapter.live.engine,incident['id'],incident['revision'],'delete',self.operator,'20')
         sent=await self.sdk_notice(content)
-        self.assertTrue(sent['with_components'])
-        self.assertEqual(len(sent['payload']['components'][0]['components']),2)
+        self.assertEqual(sent['payload']['flags'] & (1 << 15),1 << 15)
+        self.assertEqual(len(sent['payload']['components'][1]['components'][1]['components']),2)
         row=self.adapter.store.db.execute('SELECT message_id FROM action_proposals_v1 WHERE token=?',
             (content.proposal['token'],)).fetchone()
         self.assertEqual(row['message_id'],'701')
@@ -414,17 +420,17 @@ class ActionAdapterTests(unittest.IsolatedAsyncioTestCase):
             guild_id=1,channel_id=20,user=SimpleNamespace(id=author,bot=False),
             message=SimpleNamespace(id=message,author=SimpleNamespace(id=99),channel=self.channel),
             response=SimpleNamespace(defer=AsyncMock(),send_message=AsyncMock()),
-            followup=SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=701))))
+            edit_original_response=AsyncMock(return_value=SimpleNamespace(id=701)))
 
     async def test_delete_button_proposes_then_bound_confirmation_executes_once(self):
         incident=self.pattern();self.toggle('deletion')
         self.adapter.live.save_review_prompt('700','20',(incident['id'],1))
         click=self.interaction('liberdus:action:v1:delete')
         await self.adapter.receive_review_click(click);await self.drain()
-        view=click.followup.send.call_args.kwargs['view']
-        self.assertTrue(click.followup.send.call_args.kwargs['ephemeral'])
+        view=click.edit_original_response.call_args.kwargs['view']
+        self.assertTrue(click.response.defer.call_args.kwargs['ephemeral'])
         for message in self.messages.values(): message.delete.assert_not_awaited()
-        custom=view.children[0].custom_id
+        custom=buttons(view)[0].custom_id
         unauthorized=self.interaction(custom,801,author=50,message=701)
         await self.adapter.receive_review_click(unauthorized);await self.drain()
         for message in self.messages.values(): message.delete.assert_not_awaited()

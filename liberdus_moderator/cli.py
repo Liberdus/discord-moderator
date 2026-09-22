@@ -1,4 +1,4 @@
-"""Local JSON fixture runner. No Discord or Hermes network connection is made."""
+"""Moderation commands: standalone service, setup, and offline JSON fixtures."""
 
 import argparse
 import json
@@ -32,7 +32,12 @@ def _events(path):
 
 
 def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] in ("setup", "doctor", "start", "key", "migrate", "install-service", "service-key", "service-unit"):
+        from .standalone_cli import main as standalone_main
+        return standalone_main(arguments)
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.epilog = "Standalone commands: setup, doctor, start, key, migrate, install-service, service-key, service-unit. Use COMMAND --help."
     commands = parser.add_subparsers(dest="operation", required=True)
     for name in ("validate", "replay", "simulate", "command", "incidents", "reports", "classifications"):
         command = commands.add_parser(name)

@@ -1,6 +1,24 @@
-Latest prepared: **0.5.9** fixes staff Delete on historical reports by fetching current Discord content for a new confirmation. It also adds `!mod connection` and filtered reconnect diagnostics. [Install and behavior](docs/manual-delete-refresh.md) · [Continue as hermes in Codex CLI](docs/HERMES_HANDOFF.md). Deployment is pending; the reported disconnect cause still needs owner log evidence. Existing scope and action settings are preserved.
+Latest deployed: **0.5.16** uses cards for all moderation replies, including status, summaries, confirmations and private results. [Card formatting](docs/all-cards.md) · [Auto-delete rule](docs/auto-delete-scope.md) · [Confirmation recovery](docs/interaction-recovery.md) · [Current handoff](docs/HERMES_HANDOFF.md).
 
 # Liberdus Discord Moderator
+
+**Standalone 0.6.0:** run the moderation bot without Hermes, with a guided channel
+setup wizard, protected credentials, installation diagnostics, and a dedicated
+Linux service option. The existing Liberdus deployment is still on Hermes 0.5.16.
+See [standalone setup, credential handling, and migration](docs/standalone.md).
+For the existing Liberdus bot, follow [new VPS setup with a fresh database](docs/new-vps.md),
+including channel IDs and the old-to-new service switch.
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install '.[discord]'
+.venv/bin/liberdus-moderator setup
+.venv/bin/liberdus-moderator doctor
+.venv/bin/liberdus-moderator start
+```
+
+The wizard accepts channel names, IDs, or links; keys use hidden prompts. New
+installations default to reports only. Keep the data directory outside the repo.
 
 **Automated JEV screening evaluation:** a separate 44-case runner checks harmful and benign messages, including false automatic-deletion candidates, using the production decision rules. No Discord actions or manual test messages. See [run the evaluation](docs/screening-evaluation.md). The owner baseline returned 43/44 valid responses, with zero benign or ambiguous auto-delete candidates. The separate focused retry succeeded, completing valid results for all 44 unique cases while preserving the original baseline and its failed attempt.
 

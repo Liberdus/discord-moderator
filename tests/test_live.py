@@ -79,7 +79,8 @@ class LiveTests(unittest.TestCase):
         result = self.live.command(CommandRequest("1", "20", "98", "explain", arguments=(incident["id"],)), "200", True)
         self.assertIn("Repeated community", result)
         self.assertIn("Open message 1", result)
-        self.assertNotIn("<@", result)
+        self.assertIn("**Sender:** <@50>", result)
+        self.assertEqual(result.count("<@"), 1)
         self.assertIn(incident["id"], result)
 
     def test_parser_is_explicit_and_nonce_stable_bounded(self):

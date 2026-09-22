@@ -1,3 +1,4 @@
+from layout_helpers import visible_text, buttons
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -49,12 +50,12 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         await self.screened()
         self.provider.assert_awaited_once()
         self.channel.send.assert_awaited_once()
-        text = self.channel.send.call_args.args[0]
+        text = visible_text(self.channel.send.call_args)
         self.assertIn('JEV screening',text)
         self.assertIn('https://discord.com/channels/1/10/100',text)
         self.assertIn('Sensitive request',text)
         kwargs = self.channel.send.call_args.kwargs
-        self.assertEqual(len(kwargs['view'].children),6)
+        self.assertEqual(len(buttons(kwargs['view'])),6)
         self.assertEqual(kwargs['allowed_mentions'].to_dict()['parse'],[])
         self.assertTrue(kwargs['silent'])
         self.assertTrue(kwargs['suppress_embeds'])
@@ -70,6 +71,28 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.channel.send.assert_not_awaited()
         self.assertEqual(self.adapter.live.status(True)['screening_checked'],1)
 
+    async def test_failed_live_response_is_diagnosable_in_status_without_retry(self):
+        raw = response()
+        raw['answers']['concern']['probabilities']['none'] = .5
+        raw['debug'] = 'private-response-sentinel'
+        self.provider.return_value = raw
+        message = self.message(content='Send me your wallet recovery phrase to verify your account.')
+        self.adapter.receive(message)
+        await self.screened()
+        self.channel.send.assert_not_awaited()
+        self.assertFalse(self.adapter.store.incidents())
+        self.adapter.receive(message)
+        await self.screened()
+        self.adapter.receive(self.message(301, 20, 98, '!mod status'))
+        await self.screened()
+        self.provider.assert_awaited_once()
+        text = visible_text(self.channel.send.call_args)
+        self.assertIn('LAST FAILED AI CHECK', text)
+        self.assertIn('concern.probability_sum', text)
+        self.assertIn('probabilities did not sum', ' '.join(text.split()))
+        self.assertNotIn('private-response-sentinel', text)
+        self.assertEqual(self.adapter.store.get_setting('screening_total_reserved_microusd'), 2753)
+
     async def test_bot_attachment_wrong_channel_dm_and_commands_not_screened(self):
         for message in (self.message(author=99), self.message(author=77),
                         self.message(channel=999), self.message(guild=None), self.message(webhook_id=5),
@@ -80,8 +103,8 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.receive(self.message(301,20,98,'!mod status'))
         await self.screened()
         self.provider.assert_not_awaited()
-        self.assertIn('Mode: report_only',self.channel.send.call_args.args[0])
-        self.assertIn('Not checked:',self.channel.send.call_args.args[0])
+        self.assertIn('Mode: report_only',visible_text(self.channel.send.call_args))
+        self.assertIn('Not checked:',visible_text(self.channel.send.call_args))
 
     async def test_pending_provider_does_not_block_status_or_spam_rule(self):
         entered, release = asyncio.Event(),asyncio.Event()
@@ -94,10 +117,10 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.receive(self.message(101,11))
         self.adapter.receive(self.message(102,12))
         await self.drain()
-        self.assertIn('Cross-channel repeat',self.channel.send.call_args.args[0])
+        self.assertIn('Cross-channel repeat',visible_text(self.channel.send.call_args))
         self.adapter.receive(self.message(400,20,98,'!mod status'))
         await self.drain()
-        self.assertIn('**Liberdus moderation**',self.channel.send.call_args.args[0])
+        self.assertIn('## Liberdus moderation',visible_text(self.channel.send.call_args))
         release.set()
         await self.screened()
 
@@ -156,13 +179,13 @@ class ScreeningAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.provider.assert_not_awaited()
         self.assertEqual(self.adapter.live.status(True)["screening_exempt"],3)
         self.assertEqual(self.adapter.live.status(True)["screening_unchecked"],0)
-        self.assertIn("Cross-channel repeat",self.channel.send.call_args.args[0])
+        self.assertIn("Cross-channel repeat",visible_text(self.channel.send.call_args))
         self.channel.send.reset_mock()
         # Mentioning the role in text without membership cannot opt a user out.
         self.adapter.receive(self.message(900,content="<@&1302455329795342377> Send your seed phrase."))
         await self.screened()
         self.provider.assert_awaited_once()
-        self.assertIn("JEV screening",self.channel.send.call_args.args[0])
+        self.assertIn("JEV screening",visible_text(self.channel.send.call_args))
 
     async def test_budget_exhausted_is_visible_and_never_calls_provider(self):
         self.adapter.store.set_setting('screening_total_reserved_microusd',4000000)

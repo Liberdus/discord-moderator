@@ -1,3 +1,5 @@
+> **Current 0.5.13 exception:** the configured private bot-mod channel may be inside Committers for commands/reports. Other Committers channels remain excluded from monitoring. See [staff-channel placement](staff-channel-category.md). The original rollout rules below are historical.
+
 > **0.5.8 public-deletion opt-in:** the owner requested deletion in the seven approved Community channels. See [installation and controls](public-deletion.md). The historical observation/action instructions below describe their original releases.
 
 # Public-channel observation rollout — 0.5.7 prepared

@@ -11,14 +11,6 @@ import re
 from .commands import CommandRequest, handle_command
 
 
-class ReviewableText(str):
-    """Text plus the exact displayed revision, captured before transport awaits."""
-    def __new__(cls, content, identity, revision):
-        value = super().__new__(cls, content)
-        value.review_target = (identity, revision)
-        return value
-
-
 class AssessmentText(str):
     """Confirmation plus a saved result, used for best-effort report refreshes."""
     def __new__(cls, content, assessment):
@@ -106,6 +98,7 @@ class LiveSession:
             return response["data"]
         if event.command in ("deletion", "auto-delete", "timeout"):
             from .display import panel
+            from .actions import AUTO_DELETE_MIN_SCORE
             data = response["data"]
             return panel("Moderation action settings", [
                 "Policy: " + ("deletion only" if data.get("public_deletion_allowed") else "enabled" if data["actions_enabled"] else "disabled"),
@@ -113,6 +106,10 @@ class LiveSession:
                 "Auto-delete: " + ("ON" if data["auto_delete_enabled"] else "OFF"),
                 "Timeout: " + ("ON" if data["timeout_enabled"] else "OFF"),
                 "Auto-delete needs deletion ON.",
+                *(["", f"Auto-delete score: >= {AUTO_DELETE_MIN_SCORE:.2f}",
+                   "Sensitive requests, impersonation, suspicious offers, targeted abuse.",
+                   "Quoted warnings and unclear context excluded. Fresh unchanged messages only.", ""]
+                  if event.command == "auto-delete" else []),
                 *(["Timeout blocked by public policy."] if data.get("public_deletion_allowed") else
                   ["Timeout is staff-confirmed,", "10 minutes, SERVER-WIDE.",
                    "Off blocks new timeouts; it", "does not lift existing ones."]),
@@ -178,19 +175,23 @@ class LiveSession:
                           f"Screening attempts: {status['screening_attempts']}",
                           f"Trial used/reserved: ${status['screening_reserved_microusd'] / 1000000:.6f}",
                           f"Trial cap: ${self.config.classifier.daily_budget_microusd / 1000000:g}/day, ${self.config.classifier.total_budget_microusd / 1000000:g} total"]
+                from .screening_diagnostics import live_failure_lines
+                lines += live_failure_lines(self.store)
             lines += ["", "ACTIONS", "--------------------------------",
                       "Policy: " + ("deletion only" if status.get("public_deletion_allowed") else "enabled" if status["actions_enabled"] else "disabled"),
                       "Deletion: " + ("ON" if status["deletion_enabled"] else "OFF"),
                       "Auto-delete: " + ("ON" if status["auto_delete_enabled"] else "OFF"),
                       "Timeout (staff): " + ("ON" if status["timeout_enabled"] else "OFF")]
+            from .interaction_health import failure_lines
+            lines += failure_lines(self.store)
             return panel("Liberdus moderation", lines + ["Commands: !mod help"])
         if event.command in ("incident", "explain"):
             from .classification_view import format_incident
-            # Saved text is separately validated and escaped; metadata keeps the narrow panel.
+            # Preserve structured display sections and the durable revision binding.
             incident = response["data"]
             text = format_incident(incident, details=event.command == "explain")
             if incident["evidence_view"]["available"]:
-                return ReviewableText(text, incident["id"], incident["revision"])
+                text.review_target = (incident["id"], incident["revision"])
             return text
         if event.command == "actions":
             from .display import panel

@@ -8,6 +8,7 @@ import discord
 from . import actions
 from .commands import CommandRequest
 from .display import panel
+from .card_display import card_view
 from .live import AssessmentText, delivery_nonce
 from .member_roles import checked_membership, require_complete_role_cache, PROTECTED_TIMEOUT_PERMISSIONS
 
@@ -17,12 +18,40 @@ CONFIRM = 'liberdus:confirm:v1:'
 CANCEL = 'liberdus:cancel:v1:'
 
 
-def confirm_buttons(proposal):
-    view = discord.ui.View(timeout=None)
+class DeletionNotice(str):
+    """Shared receipt for deletions confirmed done during this one action attempt."""
+
+    def __new__(cls, payload, deleted, timestamp):
+        count, selected = len(deleted), len(payload['evidence'])
+        actor = 'Automatic moderation' if payload['automatic'] else f"<@{payload['actor']}>"
+        lines = [f"## {count} message{'s' if count != 1 else ''} deleted",
+                 f"**Sender:** <@{payload['author_id']}> · ID `{payload['author_id']}`",
+                 f"**Deleted by:** {actor}", f"**Completed:** <t:{int(timestamp)}:f>"]
+        if count != selected:
+            lines += [f"**Partial result: {count} of {selected} selected messages confirmed deleted.**",
+                      "Check the action record for the remaining messages."]
+        lines += ['\n**Deleted messages**']
+        lines += [f"<#{channel}> · `{message}`" for _, channel, message in deleted]
+        lines += [f"\nIncident: `{payload['incident_id']}`", f"Action record: `!mod actions {payload['incident_id']}`"]
+        result = super().__new__(cls, '\n'.join(lines))
+        result.nonce = delivery_nonce('deleted:' + ':'.join(sorted(key for key, _, _ in deleted)))
+        result.partial = count != selected
+        return result
+
+
+class ActionResult(str):
+    def __new__(cls, content, notice=None):
+        result = super().__new__(cls, content)
+        result.deletion_notice = notice
+        return result
+
+
+def confirm_buttons(proposal, content):
     label = 'Confirm deletion' if proposal['kind'] == 'delete' else 'Timeout 10 min (server-wide)'
-    view.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.danger, custom_id=CONFIRM+proposal['token']))
-    view.add_item(discord.ui.Button(label='Cancel', style=discord.ButtonStyle.secondary, custom_id=CANCEL+proposal['token']))
-    return view
+    return card_view(content, controls=(
+        discord.ui.Button(label=label, style=discord.ButtonStyle.danger, custom_id=CONFIRM+proposal['token']),
+        discord.ui.Button(label='Cancel', style=discord.ButtonStyle.secondary, custom_id=CANCEL+proposal['token'])),
+        accent_colour=0xF0B232)
 
 
 class ActionTransport:
@@ -46,7 +75,7 @@ class ActionTransport:
                 if not channel.permissions_for(channel.guild.me).manage_messages:
                     raise actions.ActionError('Missing Manage Messages in the monitored channel.')
                 message = await asyncio.wait_for(channel.fetch_message(int(item['message_id'])), timeout=5)
-                from .hermes_adapter import snapshot
+                from .discord_service import snapshot
                 refreshed.append(snapshot(message))
                 check()
                 self.checked_channel(item['channel_id'])
@@ -94,6 +123,8 @@ class ActionTransport:
         try:
             self.queue.put_nowait((generation, 'action_confirm', (interaction, identity[len(prefix):], prefix == CANCEL,
                                                                asyncio.get_running_loop().time()+30)))
+            from .interaction_health import record
+            record(self.live.engine, interaction, 'queued')
         except asyncio.QueueFull:
             await self.interaction_notice(interaction, 'Moderation is busy. No action taken; try again.', deferred=True)
         return True
@@ -109,6 +140,7 @@ class ActionTransport:
         engine = self.live.engine
         generation = self.generation
         completed = []
+        deleted = []
         attempted_delete = False
         try:
             self.action_guard(payload, generation)
@@ -119,7 +151,7 @@ class ActionTransport:
                 if payload['kind'] == 'delete' and not channel.permissions_for(channel.guild.me).manage_messages:
                     raise actions.ActionError('Missing Manage Messages in the monitored channel.')
                 message = await asyncio.wait_for(channel.fetch_message(int(item['message_id'])), timeout=5)
-                from .hermes_adapter import snapshot
+                from .discord_service import snapshot
                 changes = actions.message_changes(item, snapshot(message))
                 if changes:
                     raise actions.ActionError('Message changed (' + ', '.join(changes) + '). No action taken.')
@@ -186,6 +218,8 @@ class ActionTransport:
                     await self.action_request(key, message.delete)
                     outcome = self.action_outcome(key)
                     completed.append(f'{message.id}: {outcome}')
+                    if outcome == 'done':
+                        deleted.append((key, str(message.channel.id), str(message.id)))
                     if outcome not in ('done', 'already_absent'):
                         break  # Never continue a destructive batch after an uncertain/failing request.
         except actions.ActionError as error:
@@ -200,9 +234,10 @@ class ActionTransport:
             if attempted_delete:
                 self.action_deletions.clear()
                 self.finish_own_deletions()
-        return panel('Automatic deletion' if payload['automatic'] else 'Staff action result',
+        notice = DeletionNotice(payload, deleted, engine._now()) if deleted else None
+        return ActionResult(panel('Automatic deletion' if payload['automatic'] else 'Staff action result',
                      ['RESULT', '--------------------------------', *completed, '', 'REFERENCE', '--------------------------------', 'Incident ID', payload['incident_id'], f"By: {payload['actor']}",
-                      'No new AI call. Attempts are saved.', 'Audit: !mod actions ID'])
+                      'No new AI call. Attempts are saved.', 'Audit: !mod actions ID']), notice)
 
     def finish_own_deletions(self):
         # Stop state is already durable. Cancel old interactions rather than
@@ -231,7 +266,9 @@ class ActionTransport:
         return self.store.db.execute('SELECT outcome FROM action_attempts_v1 WHERE key=?', (key,)).fetchone()[0]
 
     async def handle_action_confirmation(self, value):
+        from .interaction_health import record
         interaction, token, cancel, deadline = value
+        record(self.live.engine, interaction, 'checking')
         event = CommandRequest(str(interaction.guild_id), str(interaction.channel_id), str(interaction.user.id),
                                'status', reply_to_message_id=str(interaction.message.id))
         try:
@@ -242,11 +279,21 @@ class ActionTransport:
                                       str(interaction.message.id), cancel=cancel)
             text = panel('Action cancelled', ['No changes made.']) if cancel else await self.perform_action(payload)
             if not cancel:
+                notice = getattr(text, 'deletion_notice', None)
+                if notice is not None:
+                    try:
+                        await self.emit(payload['channel_id'], notice, notice.nonce)
+                    except Exception:
+                        # Deletion has already completed. Never turn a delivery failure
+                        # into a failed action or retry the mutation/uncertain notice.
+                        text = str(text) + '\nShared deletion notice could not be confirmed. Check !mod actions ID.'
                 refresh = AssessmentText('', {'incident_id': payload['incident_id']})
                 await self.refresh_assessment_messages(refresh, event)
         except actions.ActionError as error:
+            record(self.live.engine, interaction, 'rejected')
             text = str(error)
-        except Exception:
+        except Exception as error:
+            record(self.live.engine, interaction, 'action_error', error)
             text = 'Action unavailable. Check !mod incident ID before trying again.'
         await self.interaction_notice(interaction, text, deferred=True)
 
@@ -268,7 +315,9 @@ class ActionTransport:
                 event = CommandRequest(self.policy.guild_id, self.policy.command_channel_ids[0],
                                        self.policy.operator_user_ids[0], 'status')
                 await self.refresh_assessment_messages(AssessmentText('', {'incident_id': identity}), event)
-                await self.emit(event.channel_id, text, delivery_nonce('auto-action:'+identity))
+                notice = getattr(text, 'deletion_notice', None)
+                await self.emit(event.channel_id, notice if notice is not None else text,
+                                notice.nonce if notice is not None else delivery_nonce('auto-action:'+identity))
             except actions.ActionError:
                 continue  # Ordinary reporting still works when automatic actions are ineligible/off.
             except Exception:

@@ -125,7 +125,7 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
             'delete_already_absent': 1, 'delete_uncertain': 1, 'delete_sending': 1, 'delete_denied': 1, 'timeout_done': 1})
         self.assertEqual(data['staff'], {'events': 5, 'needs_attention': 2, 'looks_okay': 1, 'unsure': 1, 'dismissed': 1})
         text = format_summary(data)
-        self.assertIn('RETAINED HISTORY', text)
+        self.assertIn('### Retained history', text)
         self.assertIn('Includes old/repeated reviews.', text)
         self.assertNotIn('Lifetime deletions', text)
         self.store.db.execute('DELETE FROM incidents WHERE id=?', (identity,))
@@ -219,7 +219,7 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
     def test_live_command_help_and_maximum_rendering_fit_discord(self):
         self.assertIn('!mod summary', self.live.command(self.request(command='help'), '700', True))
         text = self.live.command(self.request(), '701', True)
-        self.assertIn('**Moderation summary**', text)
+        self.assertIn('## Moderation summary', text)
         self.assertIsNone(self.live.command(self.request(), '701', True))
         data = summary_snapshot(self.engine)
         for group in ('live_lifetime_events', 'incidents', 'actions', 'staff', 'shared_screening_lifetime'):
@@ -230,8 +230,9 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
                 data[group][name] = True if name == 'partial' else 2**63-1
         rendered = framed(format_summary(data, True))
         self.assertLessEqual(len(rendered.encode('utf-16-le'))//2, 1900)
-        self.assertEqual(rendered.count('```'), 2)
-        self.assertTrue(all(len(line) <= 32 for line in rendered.split('```')[1].splitlines()))
+        self.assertNotIn('```', rendered)
+        self.assertIn('## Moderation summary', rendered)
+        self.assertIn('### Retained history', rendered)
         self.assertIn('Read only; no AI call or action.', rendered)
         self.assertNotIn('Repeated synthetic example', rendered)
 

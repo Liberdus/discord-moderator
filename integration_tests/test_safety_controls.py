@@ -1,3 +1,4 @@
+from layout_helpers import visible_text
 """Stop delivery and acknowledged-interaction lifecycle regressions; no live Discord."""
 import asyncio
 from contextlib import suppress
@@ -57,7 +58,7 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.next_command_at = asyncio.get_running_loop().time()+100
         self.adapter.worker = asyncio.create_task(self.adapter.run_worker())
         await self.drain()
-        self.assertIn('Safety controls applied',self.channel.send.call_args.args[0])
+        self.assertIn('Safety controls applied',visible_text(self.channel.send.call_args))
 
     async def test_stop_during_review_reply_await_is_immediate(self):
         await self.create_report()
@@ -65,7 +66,7 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
         click=self.interaction()
         async def send(*args,**kwargs):
             entered.set(); await release.wait()
-        click.followup.send.side_effect=send
+        click.edit_original_response.side_effect=send
         await self.adapter.receive_review_click(click)
         await asyncio.wait_for(entered.wait(),1)
         self.send_stop('pause')
@@ -154,8 +155,8 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
         await self.adapter.receive_review_click(click)
         self.adapter.deleted(1,10,(991,));await self.notices()
         click.response.defer.assert_awaited_once()
-        click.followup.send.assert_awaited_once()
-        self.assertIn('cancelled',' '.join(click.followup.send.call_args.args[0].split()))
+        click.edit_original_response.assert_awaited_once()
+        self.assertIn('cancelled',' '.join(visible_text(click.edit_original_response.call_args).split()))
         self.assertEqual(self.reviews(),[])
         self.assertEqual(self.adapter.deferred_interactions,{})
 
@@ -166,7 +167,7 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
         self.adapter.generation+=1
         self.adapter.worker=asyncio.create_task(self.adapter.run_worker())
         await self.drain();await self.notices()
-        click.followup.send.assert_awaited_once()
+        click.edit_original_response.assert_awaited_once()
         self.assertEqual(self.reviews(),[])
 
     async def test_confirm_and_cancel_clicks_reset_without_consuming_or_replaying(self):
@@ -176,14 +177,14 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
             click=self.interaction(900+index,data={'component_type':2,'custom_id':prefix+'a'*32})
             await self.adapter.receive_review_click(click)
             self.adapter.finish_own_deletions();await self.notices()
-            click.followup.send.assert_awaited_once()
-            self.assertIn('cancelled',click.followup.send.call_args.args[0])
+            click.edit_original_response.assert_awaited_once()
+            self.assertIn('cancelled',visible_text(click.edit_original_response.call_args))
         self.assertEqual(actions.history(self.adapter.live.engine,identity),[])
 
     async def test_disconnect_finishes_pending_ack_before_closing_http_session(self):
         await self.create_report();await self.stop_worker()
         click=self.interaction();events=[]
-        click.followup.send.side_effect=lambda *args,**kwargs:events.append('notice')
+        click.edit_original_response.side_effect=lambda *args,**kwargs:events.append('notice')
         self.adapter.client.close.side_effect=lambda:events.append('close')
         await self.adapter.receive_review_click(click)
         await self.adapter.disconnect()
@@ -197,13 +198,13 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
             events.append('notice')
             if len(events)==1:
                 entered.set();await asyncio.Event().wait()
-        click.followup.send.side_effect=send
+        click.edit_original_response.side_effect=send
         self.adapter.client.close.side_effect=lambda:events.append('close')
         await self.adapter.receive_review_click(click)
         await asyncio.wait_for(entered.wait(),1)
         await self.adapter.disconnect()
         self.assertEqual(events,['notice','notice','close'])
-        self.assertIn('Processing interrupted',click.followup.send.call_args.args[0])
+        self.assertIn('Processing interrupted',visible_text(click.edit_original_response.call_args))
 
     async def test_full_queue_after_defer_completes_without_mutation(self):
         await self.create_report();await self.stop_worker()
@@ -212,8 +213,8 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
         async def fill(**kwargs):self.adapter.queue.put_nowait((self.adapter.generation,'unused',None))
         click.response.defer.side_effect=fill
         await self.adapter.receive_review_click(click)
-        click.followup.send.assert_awaited_once()
-        self.assertIn('busy',click.followup.send.call_args.args[0])
+        click.edit_original_response.assert_awaited_once()
+        self.assertIn('busy',visible_text(click.edit_original_response.call_args))
         self.assertEqual(self.reviews(),[])
         self.assertEqual(self.adapter.deferred_interactions,{})
 
@@ -240,7 +241,7 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
             self.adapter.coverage_gap(reason)
             self.adapter.coverage_gap(reason)
             await self.notices()
-            click.followup.send.assert_awaited_once()
+            click.edit_original_response.assert_awaited_once()
         self.assertEqual(self.reviews(),[])
         self.assertFalse(self.adapter.deferred_interactions)
 
@@ -272,7 +273,7 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('close',events)
             events.append('notice')
         click.response.defer.side_effect=defer
-        click.followup.send.side_effect=complete
+        click.edit_original_response.side_effect=complete
         self.adapter.client.close.side_effect=lambda:events.append('close')
         receiving=asyncio.create_task(self.adapter.receive_review_click(click))
         await asyncio.wait_for(entered.wait(),1)
@@ -286,6 +287,6 @@ class SafetyControlTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         await asyncio.wait_for(asyncio.gather(receiving,shutdown),1)
         self.assertEqual(events,['acknowledged','notice','close'])
-        click.followup.send.assert_awaited_once()
+        click.edit_original_response.assert_awaited_once()
         self.assertFalse(self.adapter.deferred_interactions)
         self.assertFalse(self.adapter.interaction_receivers)

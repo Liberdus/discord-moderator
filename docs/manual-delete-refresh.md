@@ -1,6 +1,6 @@
 # Manual Delete refresh and connection diagnostics — 0.5.9
 
-The reported Delete failure happened because a report referred to historical evidence after a window reset/reconnect. Version 0.5.8 required a current, open incident even for an explicit staff deletion. Version 0.5.9 lets an authorized staff member start a new confirmation from retained source-message references. Deployment of this release is pending.
+The reported Delete failure happened because a report referred to historical evidence after a window reset/reconnect. Version 0.5.8 required a current, open incident even for an explicit staff deletion. Version 0.5.9 lets an authorized staff member start a new confirmation from retained source-message references. Deployment completed as hermes on September 22, 2026; see the checkpoint below.
 
 ## Delete an older reported message
 
@@ -16,6 +16,8 @@ This is a fresh **staff decision**, not a new JEV decision. The original inciden
 Automatic deletion criteria, public scope, staff assessments, Dismiss and timeout rules do not change. In particular, an old model score cannot authorize a new automatic deletion. Discord has no content-conditional delete request, so a narrow race remains between the final fetch and deletion; this patch does not claim to eliminate it. Uncertain attempts are retained and not automatically retried.
 
 ## Install from the hermes terminal
+
+The VPS has already completed this upgrade and now runs **0.5.11**; see [the current release](deletion-notices.md). Do not rerun this one-time updater there. The following commands document the completed 0.5.8 to 0.5.9 upgrade.
 
 On the current VPS, the short helper is:
 
@@ -36,7 +38,7 @@ Expect version **0.5.9**. Existing action switches retain their values. A previo
 
 ## Disconnect investigation
 
-The supplied notices say Discord disconnected and was connected again when the notice was delivered. They do not identify the reason, duration, missed events, or whether the gateway process restarted. The developer account cannot access the hermes user's service journal or profile logs; the diagnostic command was accidentally split at the filename, so no usable output has been received yet.
+The supplied notices say Discord disconnected and was connected again when the notice was delivered. They do not identify the reason, duration, missed events, or whether the gateway process restarted. The initial developer session could not access the hermes user's logs. The follow-up session ran the filtered diagnostic successfully as hermes; its findings are recorded below.
 
 Run this short command as `hermes`:
 
@@ -51,6 +53,16 @@ The pinned discord.py 2.7.1 client already connects with automatic reconnection 
 Version 0.5.9 adds `!mod connection`: observed disconnect/resume/new-session counts, the latest recovery duration, an available numeric close code, and a bounded recent UTC event history. Tracking begins with this release; an unknown code stays unknown. Fixed connection metadata is also logged without frames, tokens or message contents. A notice containing only a recovered Discord interruption is now titled **Discord connection restored**. Coverage caveats remain visible; the title does not imply backfill or uninterrupted screening.
 
 Do not turn on global Discord DEBUG logging to diagnose this: the pinned SDK has debug statements that can include raw event data and authentication/resume payloads. Use the filtered diagnostic and new metadata first. A concrete reconnect fix should follow evidence, not a guessed cause.
+
+## Deployment and diagnostic checkpoint — September 22, 2026
+
+The pinned helper completed both shared-gateway restarts and the 0.5.8 to 0.5.9 update. Installed-runtime imports and all nine isolated self-tests passed. All 43 installed release files matched the pinned archive. After GitHub access was configured, all 41 Python modules also matched repository commit `fef4903`. The previous plugin is retained at `/home/hermes/.hermes/profiles/liberdus-mod/.liberdus-update-backup-rphybnzt/liberdus-moderator`.
+
+At 11:26 UTC, the service was active/running and runtime state reported the moderation profile and Telegram connected. Connection tracking recorded one new session at 11:24:39 UTC and no pending disconnect. Both profile configuration files and `moderation.toml` were byte-identical before and after deployment. Saved flags remained: paused OFF, manual deletion ON, automatic deletion ON, timeout OFF and role exemption OFF. JEV remained report_only with $1/day and $4 total budgets; classifier and screening reserved totals were unchanged. No live test deletion, timeout, test message or test JEV request was performed.
+
+Before deployment, retained SDK logs contained 18 new-session and 18 successful-resume entries. The journal showed repeated service restarts on September 21, with several new Discord sessions following them. The service then remained running from September 21 at 22:50:32 UTC until deployment, while Discord successfully resumed on September 22 at 00:53:15, 03:35:11, 07:20:44, 09:19:42 and 10:25:45 UTC. Service restarts therefore explain some new sessions, but not those later resume events.
+
+The filtered logs contained no matching heartbeat-block/timeout, socket-close/error, invalid-session or server-reconnect labels. This does not establish their absence or identify a cause. The service restart counter increased from 37 to 39 during the two planned deployment restarts, so it must not be treated as a crash count. Causes of the earlier restarts and Discord-only interruptions remain unresolved. Next, correlate a naturally occurring interruption's new connection metadata with service/log timestamps; no repeated deployment or artificial live interruption is needed.
 
 ## Validation
 

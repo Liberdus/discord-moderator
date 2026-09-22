@@ -67,9 +67,9 @@ class StaffReviewTests(unittest.TestCase):
         for label in ("promotion", "not-promotion", "ban"):
             self.assertFalse(self.assess(label)["ok"])
         detailed = self.live.command(replace(self.request, command="explain", arguments=(self.identity,)), "900", True)
-        self.assertIn("LEGACY CONTENT LABEL", detailed)
+        self.assertIn("Legacy content label", detailed)
         self.assertIn("Not promotion", detailed)
-        self.assertIn("Staff     : Looks okay", detailed)
+        self.assertIn("**Looks okay** · Complete", detailed)
 
     def test_unauthorized_assessment_and_queue_never_read_or_write_private_state(self):
         before = list(self.store.db.iterdump())
@@ -129,8 +129,8 @@ class StaffReviewTests(unittest.TestCase):
         self.assertEqual(self.view()["label"], "looks_okay")
         self.assertEqual(pending_page(self.engine)["total"], 0)
         old_report = self.live.render_snapshot(self.identity, 1)
-        self.assertIn("Staff     : Needs attention", old_report)
-        self.assertIn("Latest rev: 2", old_report)
+        self.assertIn("**Needs attention**", old_report)
+        self.assertIn("latest revision 2", old_report)
 
     def test_reply_binding_is_required_and_replayed_interaction_is_deduplicated(self):
         report = self.live.claim_report(); self.live.finish_report(report["id"], "700")
@@ -191,18 +191,17 @@ class StaffReviewTests(unittest.TestCase):
         self.assertEqual(view["classification"]["evidence_state"], "historical")
         self.assertEqual(view["classification"]["reason"], "displayed_revision")
 
-    def test_new_layout_has_two_boxes_plain_punctuation_and_named_reviewer_without_ai(self):
+    def test_review_sections_keep_plain_punctuation_and_named_reviewer_without_ai(self):
         self.assess("needs-attention")
         request = replace(self.request, command="incident", arguments=(self.identity,))
         text = self.live.command(request, "903", True)
-        self.assertEqual(text.count("```"), 4)
-        self.assertIn("SAVED MESSAGE", text)
-        self.assertIn("Incident ID\n"+self.identity, text)
-        self.assertIn("scams.", text)
-        self.assertNotIn("scams\\.", text)
+        self.assertNotIn("```", text)
+        self.assertIn("### Saved message", text)
+        self.assertIn("Incident ID: `"+self.identity, text)
+        self.assertIn("scams\\.", text)  # Rendered punctuation is literal Markdown text.
         self.assertIn("Reviewed by <@98>", text)
-        self.assertIn("Staff assessment · top row", text)
-        self.assertIn("Needs attention: possible issue", text)
+        self.assertIn("### Staff assessment", text)
+        self.assertIn("possible issue, acceptable, or needs context", text)
         self.assertLessEqual(units(text), 1900)
 
 

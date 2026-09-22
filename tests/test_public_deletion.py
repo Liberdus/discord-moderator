@@ -50,6 +50,16 @@ class PublicDeletionTests(unittest.TestCase):
         self.assertEqual(self.policy.read_bytes(), before)
         self.assertEqual(self.settings(), settings)
 
+    def test_private_bot_mod_in_committers_keeps_exact_seven_channel_deletion_scope(self):
+        next(row for row in self.channels if row['id'] == COMMAND)['parent_id'] = COMMITTERS
+        before, settings = self.policy.read_bytes(), self.settings()
+        _, updated, chosen = verify_deletion(self.profile, self.get)
+        self.assertEqual(set(updated.monitored_channel_ids), APPROVED_CHANNELS)
+        self.assertEqual({row['channel_id'] for row in chosen['selected']}, APPROVED_CHANNELS)
+        self.assertEqual(updated.excluded_category_ids, (COMMITTERS,))
+        self.assertEqual(self.policy.read_bytes(), before)
+        self.assertEqual(self.settings(), settings)
+
     def test_changed_scope_or_missing_category_is_rejected(self):
         for changes in ({'monitored_channel_ids': tuple(sorted(APPROVED_CHANNELS))[:-1]},
                         {'included_category_ids': ('100',)}, {'excluded_category_ids': ()}):
