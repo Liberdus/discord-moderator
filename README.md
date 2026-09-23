@@ -2,13 +2,15 @@ Earlier Hermes release: **0.5.16** introduced cards for all moderation replies, 
 
 # Liberdus Discord Moderator
 
-**Standalone 0.7.1:** native `/mod` commands replace the old Hermes menu. Authorized
+**Standalone 0.7.2:** native `/mod` commands replace the old Hermes menu. Authorized
 staff can manage moderation and edit channel/user/role IDs and spending caps in
 Discord. Keys remain protected on the VPS. See [slash commands and the existing-service
 update guide](docs/slash-commands.md). This release includes the 0.6.1 systemd 255
 credential-mount fix, guided setup, and a dedicated Linux service option.
 Version 0.7.1 adds optional [Committers role alerts](docs/review-alerts.md) for
 flagged reviews below 0.90, with a five-minute cooldown.
+Version 0.7.2 suppresses staff notices for isolated, successfully resumed Discord
+interruptions under five seconds; [connection history and safety checks remain intact](docs/brief-resume-notices.md).
 See [standalone setup, credential handling, and migration](docs/standalone.md).
 For the existing Liberdus bot, follow [new VPS setup with a fresh database](docs/new-vps.md),
 including channel IDs and the old-to-new service switch.

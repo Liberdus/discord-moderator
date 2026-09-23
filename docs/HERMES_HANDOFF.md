@@ -1,6 +1,18 @@
 # Continue Liberdus moderation work as hermes
 
-Latest checkpoint: **0.7.1 Committers review alerts**. The owner chose @committers
+Latest checkpoint: **0.7.2 brief-resume staff notice suppression**. The owner
+authorized the first part of the discussed plan and pushing main, explicitly
+leaving message catch-up separate. Isolated, successfully recorded resumes under
+five seconds remove only their own pending disconnect-notice contribution before
+the service becomes online. Longer/new/unknown recoveries and mixed gaps retain
+notices. Earlier long outages awaiting the cooldown survive a later brief resume.
+No coverage invalidation, connection history, JEV/budget/storage warnings or
+Committers alert behavior changed. All 779 regression tests passed; installed-wheel
+checks also passed. See `docs/brief-resume-notices.md` and BUILD_PLAN 10.57.
+Install 0.7.2 on the active standalone VPS using the existing wheel-update guide;
+no destination deployment was performed here. Keep the old Hermes profile disabled.
+
+Previous checkpoint: **0.7.1 Committers review alerts**. The owner chose @committers
 for new flagged reviews below 0.90. This release adds opt-in `/mod config alert-role`
 with role selector/raw ID and Off. Follow `docs/review-alerts.md` after the normal
 VPS wheel update: select the real Committers role in bot-mod; its ID was not

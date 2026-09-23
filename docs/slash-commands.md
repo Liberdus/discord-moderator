@@ -1,4 +1,4 @@
-# Native Discord commands — 0.7.1
+# Native Discord commands — 0.7.2
 
 Discord stores application commands separately from the bot's installed code.
 Reusing the same application/token does not remove the Hermes menu. The standalone
@@ -25,7 +25,7 @@ git pull --ff-only
 sudo systemctl stop liberdus-moderator
 sudo /opt/liberdus-moderator/venv/bin/python -m pip --isolated install \
   --no-deps --force-reinstall \
-  dist/liberdus_discord_moderator-0.7.1-py3-none-any.whl
+  dist/liberdus_discord_moderator-0.7.2-py3-none-any.whl
 sudo systemctl reset-failed liberdus-moderator
 sudo systemctl start liberdus-moderator
 sudo systemctl status liberdus-moderator --no-pager

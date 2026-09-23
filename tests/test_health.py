@@ -146,6 +146,69 @@ class HealthTests(unittest.TestCase):
         self.now += 500
         self.assertIsNone(self.monitor.claim(True))
 
+    def test_brief_resume_removes_only_its_count_and_preserves_notice_cooldown(self):
+        self.monitor.gap('disconnect')  # An older, longer outage awaits delivery.
+        self.monitor.complete_disconnect({'last_recovery': 'resumed', 'last_duration': 14})
+        self.monitor.gap('disconnect')
+        before = self.store.get_setting(SETTING)
+        others = self.others()
+        short = {'last_recovery': 'resumed', 'last_duration': .2}
+        self.assertTrue(self.monitor.complete_disconnect(short))
+        after = self.store.get_setting(SETTING)
+        self.assertEqual(after, {**before, 'gaps': {'disconnect': 1}})
+        self.assertFalse(self.monitor.complete_disconnect(short))
+        self.assertEqual(self.others(), others)
+        notice = self.monitor.claim(True)
+        self.assertEqual(notice['gaps'], {'disconnect': 1})
+        self.monitor.gap('disconnect')
+        self.assertTrue(self.monitor.complete_disconnect(short))
+        self.assertEqual(self.store.get_setting(SETTING)['last_claim_at'], self.now)
+        self.now += 301
+        self.assertIsNone(self.monitor.claim(True))
+
+    def test_brief_resume_keeps_mixed_gaps_and_cannot_withdraw_claimed_or_restart_state(self):
+        short = {'last_recovery': 'resumed', 'last_duration': .2}
+        for reason in GAP_REASONS - {'disconnect'}:
+            with self.subTest(reason=reason):
+                self.store.set_setting(SETTING, None)
+                monitor = HealthMonitor(self.engine)
+                monitor.gap('disconnect')
+                monitor.gap(reason)
+                before = self.store.get_setting(SETTING)
+                self.assertFalse(monitor.complete_disconnect(short))
+                self.assertEqual(self.store.get_setting(SETTING), before)
+        self.store.set_setting(SETTING, None)
+        monitor = HealthMonitor(self.engine)
+        monitor.gap('disconnect')
+        self.assertFalse(HealthMonitor(self.engine).complete_disconnect(short))
+        monitor.claim(True)
+        before = self.store.get_setting(SETTING)
+        self.assertFalse(monitor.complete_disconnect(short))
+        self.assertEqual(self.store.get_setting(SETTING), before)
+
+    def test_unknown_long_or_new_session_recovery_keeps_disconnect_notice(self):
+        for recovery in (None, {}, {'last_recovery': 'new_session', 'last_duration': .2},
+                         *({'last_recovery': 'resumed', 'last_duration': value}
+                           for value in (None, -1, True, float('nan'), float('inf'), '0.2', 5, 14))):
+            with self.subTest(recovery=recovery):
+                self.store.set_setting(SETTING, None)
+                monitor = HealthMonitor(self.engine)
+                monitor.gap('disconnect')
+                before = self.store.get_setting(SETTING)
+                self.assertFalse(monitor.complete_disconnect(recovery))
+                self.assertEqual(self.store.get_setting(SETTING), before)
+
+    def test_brief_resume_preserves_failure_and_budget_warnings(self):
+        self.failures()
+        self.settings(total_calls=1000)
+        self.monitor.gap('disconnect')
+        before = self.store.get_setting(SETTING)
+        self.assertTrue(self.monitor.complete_disconnect({'last_recovery': 'resumed', 'last_duration': .2}))
+        self.assertEqual(self.store.get_setting(SETTING), {**before, 'gaps': {}})
+        notice = self.monitor.claim(True)
+        self.assertEqual(notice['kind'], 'warning')
+        self.assertEqual(notice['reasons'], ['repeated_screening_failures', 'total_calls'])
+
     def test_recovery_requires_valid_live_success_and_no_current_blocker(self):
         self.failures()
         self.monitor.claim(True)
@@ -351,6 +414,8 @@ class HealthTests(unittest.TestCase):
         state['gaps']['disconnect'] = MAX_COUNT
         self.store.set_setting(SETTING, state)
         self.monitor.gap('disconnect')
+        self.assertEqual(self.store.get_setting(SETTING)['gaps']['disconnect'], MAX_COUNT)
+        self.assertFalse(self.monitor.complete_disconnect({'last_recovery': 'resumed', 'last_duration': .2}))
         self.assertEqual(self.store.get_setting(SETTING)['gaps']['disconnect'], MAX_COUNT)
         for key, invalid in (('failure_code', []), ('auth_code', {}), ('failure_times', [1]*4),
                              ('failure_active', 'yes'), ('announced_reasons', ['arbitrary secret'])):

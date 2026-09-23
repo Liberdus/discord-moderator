@@ -1647,3 +1647,43 @@ Hermes moderation profile remains disabled.
 Wheel: `dist/liberdus_discord_moderator-0.7.1-py3-none-any.whl`.
 SHA-256: `ac7196961e04e59d93299adfdad03161f7f56cc23bc903b44abb0cbf07c63f78`.
 All 57 packaged source modules match the reviewed checkout.
+
+
+## 10.57 Brief resumed-connection notice suppression (0.7.2)
+
+The owner authorized implementing and publishing the notification fix first,
+with missed-message catch-up left for separate work. The supplied operational
+report described code-4000 resumes, mostly below a second; this checkout did not
+access the other VPS or independently verify its logs. The existing code queued
+staff notices at disconnect time before outage duration was available.
+
+A successfully recorded resumed session under five recorded seconds now withdraws
+only that disconnect's pending health-notice count, and only when disconnect is
+the sole pending gap reason. The health monitor uses a one-use in-memory ticket
+containing notice revision and count; an older long outage still pending during
+the five-minute cooldown is preserved. Claimed deliveries, mixed gaps, saturated
+counts and tickets from earlier process lifetimes are not withdrawn. Missing or
+invalid timing, failures to record either end, new sessions and durations >=5
+keep their existing notice eligibility. Suppression runs before online admission.
+
+No live.gap, coverage_gaps, connection-health recording/history, screening or
+confirmation invalidation logic changed. JEV failure, budget/storage and other
+gap warnings retain existing behavior. Committers mentions and their distinct
+cooldown are unchanged. No history fetching/backfill, provider calls, new policy
+settings, credentials, schema changes or dependencies were added.
+
+Validation: **515 core/setup + 236 integration + 28 standalone = 779 tests**.
+The installed wheel, without Hermes or the repository package on its import path,
+also passed 27 health and 28 standalone tests (55). Tests cover .16/.95/4.999 vs
+5/14-second recoveries, unknown timing and recording failure, new sessions,
+other gap reasons, long-then-short outages during cooldown, single-use tickets,
+unchanged warning state, saturation, persisted connection history and coverage
+invalidation. The 0.7.1 updater regression preserves policy and state. All network
+edges are mocked; no production Discord messages or provider requests were sent.
+
+The tested wheel's 57 source modules match the checkout:
+`dist/liberdus_discord_moderator-0.7.2-py3-none-any.whl`.
+SHA-256: `ad7eee2abb32b5b38a1a6b1494ea39fd4ec4284ae7e8279126a295b5f0649f8b`.
+Setup/update guides target 0.7.2; docs/brief-resume-notices.md records behavior.
+The active standalone VPS must install this wheel and restart; no live service
+was changed here. Keep the old Hermes moderation profile disabled.

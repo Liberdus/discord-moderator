@@ -15,6 +15,7 @@ from .display import panel
 SETTING = 'health_monitor_v1'
 WINDOW_SECONDS = 300
 ALERT_INTERVAL_SECONDS = 300
+BRIEF_RESUME_SECONDS = 5
 FAILURE_THRESHOLD = 3
 MAX_COUNT = 2**63 - 1
 GAP_REASONS = frozenset({'disconnect', 'queue_full', 'worker_failure', 'unavailable_edit', 'invalid_event', 'restart_lost', 'scope_changed'})
@@ -73,6 +74,7 @@ def _initial():
 class HealthMonitor:
     def __init__(self, engine):
         self.engine, self.store = engine, engine.store
+        self._disconnect_notice = None
         with self.store.transaction():
             state = self._state()
             if state['attempt'] is not None and state['attempt']['status'] == 'sending':
@@ -154,11 +156,38 @@ class HealthMonitor:
         return True
 
     def gap(self, reason):
+        if reason == 'disconnect':
+            self._disconnect_notice = None
         if not isinstance(reason, str) or reason not in GAP_REASONS or not self._enabled():
             return False
         with self.store.transaction():
             state = self._state()
-            state['gaps'][reason] = min(MAX_COUNT, state['gaps'].get(reason, 0) + 1)
+            previous = state['gaps'].get(reason, 0)
+            state['gaps'][reason] = min(MAX_COUNT, previous + 1)
+            self._save(state)
+            if reason == 'disconnect' and previous < MAX_COUNT:
+                self._disconnect_notice = (state['revision'], previous + 1)
+        return True
+
+    def complete_disconnect(self, recovery):
+        """Withdraw this brief resume's notice only; coverage/history stay intact."""
+        ticket, self._disconnect_notice = self._disconnect_notice, None
+        if (ticket is None or not isinstance(recovery, dict)
+                or recovery.get('last_recovery') != 'resumed'
+                or not _time(recovery.get('last_duration'))
+                or recovery['last_duration'] >= BRIEF_RESUME_SECONDS):
+            return False
+        with self.store.transaction():
+            state = self._state()
+            # Preserve mixed gaps, older disconnects, and any claimed delivery.
+            # The in-memory ticket is single-use and never survives a restart.
+            if (set(state['gaps']) != {'disconnect'}
+                    or (state['revision'], state['gaps']['disconnect']) != ticket):
+                return False
+            if state['gaps']['disconnect'] == 1:
+                del state['gaps']['disconnect']
+            else:
+                state['gaps']['disconnect'] -= 1
             self._save(state)
         return True
 

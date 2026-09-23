@@ -142,6 +142,7 @@ class DiscordService(SlashCommands, ActionTransport):
         self.generation = 0
         self.monitored_scope_signature = None
         self.online = False
+        self.disconnect_recorded = False
         self.closing = False
         self.lock_fd = None
         self.owns_token_lock = False
@@ -374,9 +375,16 @@ class DiscordService(SlashCommands, ActionTransport):
             self.refresh_scope()
             if self.online:
                 return
+            recorded, self.disconnect_recorded = self.disconnect_recorded, False
+            recovery = None
             with contextlib.suppress(Exception):
-                from .connection_health import record
+                from .connection_health import record, state
                 record(self.live.engine, 'resumed' if resumed else 'new_session')
+                if recorded:
+                    recovery = state(self.live.engine)
+            if self.health is not None:
+                with contextlib.suppress(Exception):
+                    self.health.complete_disconnect(recovery)
             self.coverage_gap("reconnect")
             self.online = True
             self._mark_connected()
@@ -408,11 +416,13 @@ class DiscordService(SlashCommands, ActionTransport):
     def lost_connection(self):
         if self.closing or not self.online:
             return
+        self.disconnect_recorded = False
         with contextlib.suppress(Exception):
             from .connection_health import record
             ws = getattr(self.client, 'ws', None)
             code = getattr(ws, '_close_code', None) or getattr(getattr(ws, 'socket', None), 'close_code', None)
             record(self.live.engine, 'disconnected', code)
+            self.disconnect_recorded = True
         self.online = False
         self.ready_event.clear()
         self.coverage_gap("disconnect")

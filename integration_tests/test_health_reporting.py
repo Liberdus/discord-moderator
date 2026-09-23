@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import test_hermes_adapter as adapter_tests
 from test_message_screening import response
@@ -123,6 +123,93 @@ class HealthReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('not backfilled',' '.join(text.split()))
         self.assertNotIn('screening recovered',text)
         self.provider.assert_not_awaited()
+
+    async def test_brief_resumes_are_quiet_but_still_invalidate_and_record_coverage(self):
+        from liberdus_moderator.connection_health import state
+        for duration in (.16, .95, 4.999):
+            with self.subTest(duration=duration):
+                gaps = self.adapter.store.get_setting('coverage_gaps', 0)
+                generation = self.adapter.generation
+                before = state(self.adapter.live.engine)
+                with patch.object(self.adapter.classifier, 'invalidate', wraps=self.adapter.classifier.invalidate) as invalidate:
+                    self.adapter.lost_connection()
+                    self.now += duration
+                    await self.adapter.ready(resumed=True)
+                    self.assertEqual(invalidate.call_count, 2)
+                self.assertEqual(self.adapter.generation, generation + 2)
+                self.assertEqual(self.adapter.store.get_setting('coverage_gaps'), gaps + 2)
+                self.assertEqual(self.adapter.store.get_setting('coverage_started_at'), self.now)
+                saved = state(self.adapter.live.engine)
+                self.assertEqual(saved['disconnects'], before['disconnects'] + 1)
+                self.assertEqual(saved['resumes'], before['resumes'] + 1)
+                self.assertEqual(saved['last_duration'], duration)
+                self.assertEqual([row['event'] for row in saved['history'][-2:]], ['disconnected', 'resumed'])
+                await self.adapter.flush_health()
+                self.channel.send.assert_not_awaited()
+                self.assertIsNone(self.adapter.store.get_setting(SETTING)['last_claim_at'])
+        self.provider.assert_not_awaited()
+
+    async def test_resumes_at_five_seconds_or_more_still_notify(self):
+        for duration in (5, 14):
+            with self.subTest(duration=duration):
+                self.channel.send.reset_mock()
+                self.adapter.lost_connection()
+                self.now += duration
+                await self.adapter.ready(resumed=True)
+                await self.adapter.flush_health()
+                self.channel.send.assert_awaited_once()
+                text = visible_text(self.channel.send.call_args)
+                self.assertIn('Discord connection restored', text)
+                self.assertIn('Discord disconnected', text)
+                self.now += 301
+
+    async def test_brief_resume_keeps_other_gaps_and_pending_long_outage(self):
+        self.adapter.lost_connection()
+        self.adapter.coverage_gap('queue_full')
+        self.now += .2
+        await self.adapter.ready(resumed=True)
+        await self.adapter.flush_health()
+        text = visible_text(self.channel.send.call_args)
+        self.assertIn('Queue overflow', text)
+        self.assertIn('Discord disconnected', text)
+        self.channel.send.reset_mock()
+        self.adapter.lost_connection()
+        self.now += 14
+        await self.adapter.ready(resumed=True)
+        await self.adapter.flush_health()  # Cooldown retains this long interruption.
+        self.channel.send.assert_not_awaited()
+        self.adapter.lost_connection()
+        self.now += .2
+        await self.adapter.ready(resumed=True)
+        self.assertEqual(self.adapter.store.get_setting(SETTING)['gaps'], {'disconnect': 1})
+        self.now += 301
+        await self.adapter.flush_health()
+        self.channel.send.assert_awaited_once()
+
+    async def test_missing_timing_or_failed_connection_recording_keeps_notice(self):
+        from liberdus_moderator.connection_health import KEY, state
+        for failure in ('missing_time', 'disconnect_record', 'resume_record'):
+            with self.subTest(failure=failure):
+                self.channel.send.reset_mock()
+                if failure == 'disconnect_record':
+                    with patch('liberdus_moderator.connection_health.record', side_effect=ValueError('synthetic failure')):
+                        self.adapter.lost_connection()
+                else:
+                    self.adapter.lost_connection()
+                if failure == 'missing_time':
+                    saved = state(self.adapter.live.engine)
+                    saved['pending_since'] = None
+                    self.adapter.store.set_setting(KEY, saved)
+                self.now += .2
+                if failure == 'resume_record':
+                    with patch('liberdus_moderator.connection_health.record', side_effect=ValueError('synthetic failure')):
+                        await self.adapter.ready(resumed=True)
+                else:
+                    await self.adapter.ready(resumed=True)
+                self.assertTrue(self.adapter.online)
+                await self.adapter.flush_health()
+                self.channel.send.assert_awaited_once()
+                self.now += 301
 
     async def test_normal_delete_gap_and_pause_are_not_failure_alerts(self):
         self.adapter.coverage_gap('deleted_message')
