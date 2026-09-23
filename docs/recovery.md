@@ -1,5 +1,10 @@
 # Recovery for the local core
 
+Current runtime behavior: 0.8.0 adds [bounded message catch-up](catch-up.md)
+after disconnects and unexpected restarts. The core backup/restore steps below
+remain separate from that feature; older pilot limitations describe the original
+release.
+
 This guide covers SQLite backup and restore. The optional Hermes adapter has a disabled installer; use [live-pilot.md](live-pilot.md) for its stop/restart procedure and delivery recovery boundaries. Actual installation/live acceptance are still pending.
 
 ## What to preserve

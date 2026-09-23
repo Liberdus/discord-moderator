@@ -198,8 +198,8 @@ def apply_plan(profile, get, *, now=None, enable_deletion=False):
     if (any(data.get('platforms', {}).get('discord', {}).get('enabled') is not False for data in (default, local))
             or local.get('platforms', {}).get('liberdus_moderator', {}).get('enabled') is not False):
         raise RolloutError('Disable the moderation platform and finish the gateway restart first.')
-    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.7.2':
-        raise RolloutError('Install the reviewed 0.7.2 plugin while disabled before applying scope.')
+    if manifest.get('name') != 'liberdus-moderator' or manifest.get('version') != '0.8.0':
+        raise RolloutError('Install the reviewed 0.8.0 plugin while disabled before applying scope.')
     lock = os.open(paths[3], os.O_RDWR | os.O_NOFOLLOW)
     try:
         try:

@@ -1,5 +1,9 @@
 # Brief resumed connections — 0.7.2
 
+Version 0.8.0 adds [bounded catch-up](catch-up.md) separately. An incomplete
+recovery can produce a coverage warning even when a brief-resume notice was
+suppressed. The disconnect-notice behavior described below remains in place.
+
 The owner reported repeated sub-second gateway disconnects that successfully
 resumed but still posted "Discord connection restored" in bot-mod. The health
 monitor queued a disconnect notice immediately, before its duration was known.

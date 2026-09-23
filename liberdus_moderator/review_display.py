@@ -39,6 +39,8 @@ def format_review(incident, *, details=False):
         overview += f"Revision {revision}\n"
 
     classification = incident["classification"]
+    if incident.get('recovered'):
+        overview += '**Recovered after disconnect · Staff review only**\n'
     suggestion = "### JEV suggestion\n"
     if classification["outcome"] == "ok":
         suggestion += (f"**{classification['choice'].replace('_', ' ').capitalize()}** · "

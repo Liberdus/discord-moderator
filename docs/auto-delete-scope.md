@@ -1,5 +1,9 @@
 # Four-concern automatic deletion — 0.5.15
 
+Current exception in 0.8.0: [messages recovered after a disconnect](catch-up.md)
+always require staff review, regardless of score. The rule below applies to
+eligible live results.
+
 The owner explicitly approved automatic deletion for **sensitive requests, impersonation, suspicious offers and targeted abuse at a model score of 0.90 or higher**, retaining the warning, context and evidence exclusions. Previously, only sensitive requests scoring strictly above 0.90 qualified. The approved set is explicit in `actions.py`; adding a future screening label will not automatically authorize deletion for it.
 
 The unrounded concern score is compared against 0.90. Exactly 0.90 qualifies; 0.89999 does not, even if a display rounds it to 0.90. The purpose must still be neither `quoted_warning` nor `unclear`. A concern of `none` or `unclear` does not qualify. `!mod auto-delete` displays the threshold and four categories alongside the existing feature switches.

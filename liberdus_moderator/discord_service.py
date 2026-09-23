@@ -133,6 +133,8 @@ class DiscordService(SlashCommands, ActionTransport):
         self.worker = self.receiver = None
         self.classifier = None
         self.health = self.health_task = None
+        self.catchup = None
+        self.unexpected_shutdown = False
         self.processing_evidence = False
         self.classifier_candidates = set()
         self.auto_delete_candidates = set()
@@ -185,6 +187,9 @@ class DiscordService(SlashCommands, ActionTransport):
                                                  on_result=lambda job: self.enqueue("screen_result", job),
                                                  on_health=self.health_outcome)
                 self.classifier.start()
+            if self.policy.ai_enabled and self.policy.classifier.mode == 'report_only':
+                from .catchup_transport import Catchup
+                self.catchup = Catchup(self)
             self.worker = asyncio.create_task(self.run_worker())
             self.receiver = asyncio.create_task(self.run_receiver())
             self.health_task = asyncio.create_task(self.run_health())
@@ -245,6 +250,11 @@ class DiscordService(SlashCommands, ActionTransport):
     def process_evidence(self, evidence):
         if self.guarded_scope() and not self.in_scope(evidence.guild_id, evidence.channel_id):
             return {"disposition": "ignored", "reason": "outside_current_scope", "incident_ids": []}
+        if self.catchup is not None:
+            from . import recovery
+            prior = recovery.evidence(self.live.engine, evidence.message_id)
+            if prior is not None and prior['version'] != evidence.version:
+                recovery.invalidate(self.live.engine, evidence.message_id)
         result = self.live.engine.process(evidence)
         if self.classifier is not None:
             if self.policy.classifier.mode == "report_only":
@@ -388,6 +398,8 @@ class DiscordService(SlashCommands, ActionTransport):
             self.coverage_gap("reconnect")
             self.online = True
             self._mark_connected()
+            if self.catchup is not None:
+                self.catchup.ready()
             self.ready_event.set()
         except Exception:
             await self.fail("pilot_readiness_failed")
@@ -599,6 +611,9 @@ class DiscordService(SlashCommands, ActionTransport):
         if self.guarded_scope() and str(guild_id) == self.policy.guild_id:
             self.refresh_scope()
         if self.in_scope(guild_id, channel_id) and str(channel_id) in self.policy.monitored_channel_ids:
+            if self.catchup is not None:
+                from .recovery import invalidate
+                invalidate(self.live.engine, str(message_id))
             self.enqueue("edit", (str(channel_id), int(message_id)))
 
     def deleted(self, guild_id, channel_id, message_ids):
@@ -607,6 +622,10 @@ class DiscordService(SlashCommands, ActionTransport):
         if all(str(identity) in self.action_deletions for identity in message_ids):
             return  # The bounded action batch invalidates coverage on completion.
         if self.in_scope(guild_id, channel_id) and str(channel_id) in self.policy.monitored_channel_ids:
+            if self.catchup is not None:
+                from .recovery import invalidate
+                for identity in message_ids:
+                    invalidate(self.live.engine, str(identity))
             # A deleted message may still be queued and absent from SQLite. Reset
             # conservatively so queued evidence cannot resurrect it.
             self.coverage_gap("deleted_message")
@@ -991,6 +1010,7 @@ class DiscordService(SlashCommands, ActionTransport):
             await self.fail("worker_failure")
 
     async def fail(self, code):
+        self.unexpected_shutdown = True
         self.online = False
         self.ready_event.clear()
         with contextlib.suppress(Exception):
@@ -1002,6 +1022,10 @@ class DiscordService(SlashCommands, ActionTransport):
         self.closing = True
         self.online = False
         self.ready_event.clear()
+        if self.catchup is not None:
+            with contextlib.suppress(Exception):
+                await self.catchup.close(clean=not self.unexpected_shutdown and not getattr(self, 'error_code', None))
+            self.catchup = None
         while not self.queue.empty():
             _, kind, value = self.queue.get_nowait()
             self.cancel_queued_interaction(kind, value)

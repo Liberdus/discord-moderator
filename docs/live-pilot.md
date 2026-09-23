@@ -1,5 +1,10 @@
 # Hermes report-only pilot
 
+**0.8.0 update:** [Bounded message catch-up](catch-up.md) now covers recent new
+messages after disconnects and unexpected restarts when JEV screening is enabled.
+Recovered flags require staff review. The no-backfill descriptions below document
+the original pilot.
+
 **Current update — September 21, 2026:** version 0.4.0 adds opt-in [single-message JEV screening and private reports](message-screening.md), with a separate $1/day, $4 total trial allowance. The 0.3.5 staff review flow is owner-confirmed, including queue removal after Looks okay. Older dated sections below preserve their original mode, limits and deployment status; use the new runbook for screening activation.
 
 **Current 0.3.5 update:** [staff assessments and the pending-review workflow](staff-assessment.md) are implemented and tested with network blocked/mocked. Deployment, live report edits and the updated phone layout remain owner checks. The previously supplied 0.3.4 incident display confirms that earlier display feature.

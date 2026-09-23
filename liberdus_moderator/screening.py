@@ -114,6 +114,9 @@ class MessageScreener(ShadowClassifier):
                 "started_at REAL NOT NULL,finished_at REAL,day INTEGER NOT NULL,outcome TEXT NOT NULL,"
                 "result_json TEXT,latency_ms INTEGER,incident_id TEXT)")
             self.store.db.execute("CREATE INDEX IF NOT EXISTS screening_incident ON screening_attempts_v1(incident_id)")
+            self.store.db.execute('CREATE TABLE IF NOT EXISTS screening_versions_v1('
+                                 'fingerprint TEXT PRIMARY KEY, attempt_key TEXT NOT NULL '
+                                 'REFERENCES screening_attempts_v1(key) ON DELETE CASCADE)')
             self.store.db.execute("CREATE TABLE IF NOT EXISTS screening_failures_v1("
                 "attempt_key TEXT PRIMARY KEY REFERENCES screening_attempts_v1(key) ON DELETE CASCADE,"
                 "diagnostic TEXT NOT NULL)")
@@ -157,18 +160,25 @@ class MessageScreener(ShadowClassifier):
                 and self.store.get_setting("policy_hash") == self.config.policy_hash)
 
     def evidence(self, identity):
-        row = self.store.db.execute("SELECT * FROM messages WHERE message_id=?", (identity,)).fetchone()
-        if not row or not row["eligible"]:
-            return None
-        event = MessageEvent.from_dict(json.loads(row["event_json"]))
+        from . import recovery
+        recovered = recovery.evidence(self.engine, identity)
+        if recovered is not None:
+            event = MessageEvent.from_dict({key: value for key, value in recovered.items() if key not in {'version', 'fingerprint'}})
+        else:
+            row = self.store.db.execute("SELECT * FROM messages WHERE message_id=?", (identity,)).fetchone()
+            if not row or not row["eligible"]:
+                return None
+            event = MessageEvent.from_dict(json.loads(row["event_json"]))
+            if event.version != row['version']:
+                return None
         now = self.engine._now()
-        if (event.version != row["version"] or event.guild_id != self.config.guild_id
+        if (event.guild_id != self.config.guild_id
                 or event.channel_id not in self.config.monitored_channel_ids
                 or event.author_id == self.config.bot_user_id or event.is_bot or event.is_webhook
                 or not self.engine.role_evidence_available(event.author_role_ids)
                 or self.engine.role_exempt(event.author_role_ids)
                 or event.is_thread or event.has_attachments or not event.content.strip()
-                or event.created_at < self.store.get_setting("coverage_started_at", 0)
+                or (recovered is None and event.created_at < self.store.get_setting("coverage_started_at", 0))
                 or event.created_at <= now - self.config.storage.retention_seconds
                 or event.modified_at > now):
             return None
@@ -258,6 +268,10 @@ class MessageScreener(ShadowClassifier):
             self.store.db.execute("INSERT INTO screening_attempts_v1 VALUES(?,?,?,?,?,?,?,?,?,?,NULL,?,'running',NULL,NULL,NULL)",
                 (job.key, job.message_id, job.version, job.policy_hash, SCREENING_HASH, MODEL,
                  job.evidence_hash, 1, evidence["created_at"], now, day))
+            from .recovery import content_key
+            event = MessageEvent.from_dict({key: value for key, value in evidence.items() if key not in {'version', 'fingerprint'}})
+            self.store.db.execute('INSERT OR REPLACE INTO screening_versions_v1 VALUES(?,?)',
+                                 (content_key(event, self.config.policy_hash, SCREENING_HASH), job.key))
             for prefix in ("daily", "total"):
                 self.bump(prefix + "_calls")
                 self.bump(prefix + "_reserved_microusd", RESERVED_MICROUSD)
@@ -347,10 +361,14 @@ class MessageScreener(ShadowClassifier):
                     evidence = self.evidence(job.message_id)
                     outcome = "ok"
                     if result["concern"] in FLAGGED:
+                        from . import recovery
+                        recovered = recovery.evidence(self.engine, job.message_id) is not None
                         match = Match("jev_message:" + job.message_id, "jev_message", evidence["author_id"],
-                                      "JEV screening: " + LABELS[result["concern"]] + ". Staff review required; not a verified violation.",
+                                      (recovery.PREFIX if recovered else '') + "JEV screening: " + LABELS[result["concern"]] + ". Staff review required; not a verified violation.",
                                       (evidence,), evidence["created_at"] + self.config.storage.retention_seconds)
                         identity, _ = self.engine._record(match, self.engine._now())
+                        if recovered:
+                            self.store.db.execute('INSERT OR IGNORE INTO catchup_flags_v1 VALUES(?)', (identity,))
                         self.bump("flagged")
                     self.bump("checked")
                 else:

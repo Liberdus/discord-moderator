@@ -1,4 +1,8 @@
-# Standalone moderation — 0.7.2
+# Standalone moderation — 0.8.0
+
+Version 0.8.0 adds [bounded message catch-up](catch-up.md) after disconnects and
+unexpected restarts. It activates with JEV screening, uses existing budgets, and
+sends recovered flags to staff review without automatic deletion.
 
 Use native `/mod` commands for moderation and `/mod config` for approved settings.
 The standalone runner registers its menu at startup and removes obsolete global
@@ -103,7 +107,7 @@ Build the wheel, then run the installer from the reviewed environment:
 ```bash
 .venv/bin/python -m pip wheel --no-deps . --wheel-dir dist
 sudo .venv/bin/liberdus-moderator install-service \
-  --wheel dist/liberdus_discord_moderator-0.7.2-py3-none-any.whl --start
+  --wheel dist/liberdus_discord_moderator-0.8.0-py3-none-any.whl --start
 ```
 
 The installer fetches the pinned Discord/JEV HTTP dependencies from PyPI and runs
@@ -282,7 +286,7 @@ Blindly restoring the older source database can lose newer audit records.
 
 <a id="update-an-existing-060-system-service-to-061"></a>
 
-### Update an existing 0.6.x or 0.7.x system service to 0.7.2
+### Update an existing 0.6.x or 0.7.x system service to 0.8.0
 
 On the destination VPS with the existing checkout (the reported host uses
 `/root/discord-moderator`), build the new wheel before stopping the service:
@@ -294,7 +298,7 @@ git pull --ff-only
 sudo systemctl stop liberdus-moderator
 sudo /opt/liberdus-moderator/venv/bin/python -m pip --isolated install \
   --no-deps --force-reinstall \
-  dist/liberdus_discord_moderator-0.7.2-py3-none-any.whl
+  dist/liberdus_discord_moderator-0.8.0-py3-none-any.whl
 sudo systemctl reset-failed liberdus-moderator
 sudo systemctl start liberdus-moderator
 sudo systemctl status liberdus-moderator --no-pager

@@ -80,7 +80,7 @@ class SetupTests(unittest.TestCase):
         (self.profile.parent.parent / "config.yaml").write_text("platforms:\n  discord:\n    enabled: false\n")
         manifest = self.profile / "plugins/liberdus-moderator/plugin.yaml"
         manifest.parent.mkdir(parents=True)
-        manifest.write_text("name: liberdus-moderator\nversion: 0.7.2\n")
+        manifest.write_text("name: liberdus-moderator\nversion: 0.8.0\n")
         (self.profile / "state").mkdir()
         lock = self.profile / "state/moderation.lock"
         lock.touch()
@@ -94,8 +94,8 @@ class SetupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"approved private"): configure_screening(self.profile)
         self.policy.write_text(policy_text(policy))
         manifest.write_text("name: liberdus-moderator\nversion: 0.3.5\n")
-        with self.assertRaisesRegex(ValueError,"0.7.2"): configure_screening(self.profile)
-        manifest.write_text("name: liberdus-moderator\nversion: 0.7.2\n")
+        with self.assertRaisesRegex(ValueError,"0.8.0"): configure_screening(self.profile)
+        manifest.write_text("name: liberdus-moderator\nversion: 0.8.0\n")
         configure_screening(self.profile)
         self.assertEqual(Config.from_file(self.policy).classifier.mode,"report_only")
         self.assertFalse((self.profile / "state/moderation.sqlite3").exists())

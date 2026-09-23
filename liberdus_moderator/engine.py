@@ -182,6 +182,9 @@ class Engine:
     def _prune(self, now):
         cutoff = now - self.config.storage.retention_seconds
         self.store.db.execute("DELETE FROM messages WHERE created_at < ?", (cutoff,))
+        from .recovery import present
+        if present(self, 'catchup_evidence_v1'):
+            self.store.db.execute('DELETE FROM catchup_evidence_v1 WHERE created_at < ?', (cutoff,))
         self.store.db.execute("DELETE FROM incidents WHERE updated_at < ?", (cutoff,))
         expired = self.store.db.execute(
             "SELECT * FROM incidents WHERE status='open' AND expires_at <= ?", (now,)

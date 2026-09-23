@@ -112,6 +112,9 @@ def plan(engine, identity, revision, kind, actor, channel_id, *, automatic=False
 
 def automatic_candidate(engine, incident):
     from .screening import saved_screening
+    from .recovery import recovered_incident
+    if recovered_incident(engine, incident['id']):
+        return False
     if not enabled(engine, 'auto_delete') or not enabled(engine, 'deletion') or incident['rule_id'] != 'jev_message':
         return False
     view = saved_screening(engine, incident)

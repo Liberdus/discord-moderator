@@ -1687,3 +1687,53 @@ SHA-256: `ad7eee2abb32b5b38a1a6b1494ea39fd4ec4284ae7e8279126a295b5f0649f8b`.
 Setup/update guides target 0.7.2; docs/brief-resume-notices.md records behavior.
 The active standalone VPS must install this wheel and restart; no live service
 was changed here. Keep the old Hermes moderation profile disabled.
+
+
+## 10.58 Bounded recovery of missed new messages (0.8.0)
+
+The owner authorized implementation of the next part after the 0.7.2 notice
+fix. JEV report-only screening now persists per-channel progress and performs
+bounded history reconciliation after a resumed/new session or unexpected
+process restart. First installation, clean stops, manual pauses and policy or
+relevant action-setting changes establish a new baseline without an old backlog.
+
+Limits: five-minute lookback, two-second overlap, 100 history entries/channel,
+200 total per recovery, and a ten-minute recovery deadline. Continued disconnects
+preserve entry cursors and caps. Recovery waits for live queued work, shares the
+existing provider worker/budgets, refetches messages, and checks current channel
+scope/permissions and membership when exemptions apply. A content-version ledger
+ignores role-only REST/gateway metadata differences and retains attempted-request
+replay protection, including uncertain charges.
+
+Recovered evidence is stored separately from live detection windows. Coverage
+resets, pause epochs, edits/deletions, retention and policy changes invalidate it.
+Recovered incidents carry a durable marker that prevents automatic deletion at
+both planning and execution checks, regardless of score. Cards identify recovered
+flags as staff review only; current-content manual deletion remains available.
+Catch-up does not replay code spam windows or staff commands. Previously deleted
+messages and edits to messages created before the bounded interval are outside
+this first phase.
+
+Incomplete/truncated recovery adds a fixed private health reason and respects
+the existing five-minute notice cooldown. It is independent of brief-resume
+suppression and does not hide provider/budget/storage warnings. /mod status
+shows progress and checked/skipped counts. Storage exhaustion advances with an
+incomplete result instead of repeatedly fetching the same history page; shutdown
+still releases the connection if saving catch-up progress fails.
+
+Validation: 521 core/setup, 237 pinned-Hermes integration and 39 standalone tests
+passed (797 total). Tests cover reconnect recovery, repeated disconnects during
+a request, a full service/database reopen, first-start/clean-stop/pause behavior,
+role exemptions, permission and budget failures, caps, live processing during a
+blocked history request, evidence expiry/retention and the automatic-action block.
+The stopped 0.7.2 upgrade preserves policy and saved state. The installed wheel
+passed 39 standalone and six recovery tests without Hermes (45 additional checks).
+All Discord/provider calls in these checks used synthetic transports/responses.
+
+Wheel: `dist/liberdus_discord_moderator-0.8.0-py3-none-any.whl`.
+SHA-256: `f2372b3387b023cafde66ffc55bb5895ead0e1dbf97bf95d8a1d79dfbf5e6040`.
+All 59 packaged Python modules match the reviewed sources. Guides target 0.8.0;
+`docs/catch-up.md` records the limits, startup behavior and coverage caveats.
+No deployment, live Discord message, paid evaluation, credential rotation or
+production setting change was performed. The active standalone VPS requires its
+normal wheel update/restart; the old Hermes moderator profile stays disabled.

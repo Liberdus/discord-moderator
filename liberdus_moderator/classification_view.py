@@ -60,6 +60,10 @@ def _reason(engine, incident, attempt, now, *, expected_rubric=RUBRIC_HASH, mode
     for item in evidence:
         message = store.db.execute("SELECT version, eligible FROM messages WHERE message_id=?",
                                    (item["message_id"],)).fetchone()
+        from .recovery import recovered_incident, evidence as recovered_evidence
+        if recovered_incident(engine, incident['id']):
+            recovered = recovered_evidence(engine, item['message_id'])
+            message = {'version': recovered['version'], 'eligible': True} if recovered else None
         if (not message or message["version"] != item["version"] or not message["eligible"]
                 or item["guild_id"] != config.guild_id
                 or item["channel_id"] not in config.monitored_channel_ids
@@ -189,6 +193,8 @@ def incident_view(engine, incident, revision=None):
             and view["classification"].get("revision") != view["revision"]):
         view["classification"] = {**view["classification"], "evidence_state": "historical", "reason": "displayed_revision"}
     view["evidence_view"] = saved_evidence(engine, view)
+    from .recovery import recovered_incident
+    view['recovered'] = recovered_incident(engine, incident['id'])
     return view
 
 

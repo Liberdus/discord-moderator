@@ -1,6 +1,20 @@
 # Continue Liberdus moderation work as hermes
 
-Latest checkpoint: **0.7.2 brief-resume staff notice suppression**. The owner
+Latest checkpoint: **0.8.0 bounded message catch-up**. The owner approved the
+next part after 0.7.2. Enabled JEV screening now catches up new messages after
+disconnects and unexpected restarts, using durable per-channel progress, a
+five-minute lookback, two-second overlap, 100 entries/channel and 200 total.
+Recovered flags are labeled for staff review and always excluded from automatic
+deletion. Current scope/membership checks, shared budgets and retained attempt
+deduplication apply. Interrupted or potentially charged requests are not retried.
+First installation, clean stops and manual pause/resume do not scan old history.
+Incomplete recovery records a private coverage warning; `/mod status` shows
+progress. Older-message edits and already-deleted messages are outside this
+first phase. See `docs/catch-up.md` and BUILD_PLAN 10.58 for limits and validation.
+Install 0.8.0 on the active standalone VPS using the existing wheel-update guide;
+no destination deployment was performed here. Keep the old Hermes profile disabled.
+
+Previous checkpoint: **0.7.2 brief-resume staff notice suppression**. The owner
 authorized the first part of the discussed plan and pushing main, explicitly
 leaving message catch-up separate. Isolated, successfully recorded resumes under
 five seconds remove only their own pending disconnect-notice contribution before

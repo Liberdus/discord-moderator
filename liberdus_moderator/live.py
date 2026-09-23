@@ -170,6 +170,9 @@ class LiveSession:
                 "Role exemption: " + ("ON" if status['role_exemption_enabled'] else "OFF"),
                 "Exempt roles:", *(status['screening_exempt_role_ids'][:3] or ['none'])]
             if status['classifier_mode'] == 'report_only':
+                from .recovery import KEY, status as recovery_status
+                if self.store.get_setting(KEY) is not None:
+                    lines += ['Catch-up: ' + recovery_status(self.engine)]
                 lines += [f"Screened: {status['screening_checked']}", f"Flagged: {status['screening_flagged']}",
                           f"Not checked: {status['screening_unchecked']}", f"Role-exempt: {status['screening_exempt']}",
                           f"Screening attempts: {status['screening_attempts']}",

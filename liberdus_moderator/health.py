@@ -18,7 +18,7 @@ ALERT_INTERVAL_SECONDS = 300
 BRIEF_RESUME_SECONDS = 5
 FAILURE_THRESHOLD = 3
 MAX_COUNT = 2**63 - 1
-GAP_REASONS = frozenset({'disconnect', 'queue_full', 'worker_failure', 'unavailable_edit', 'invalid_event', 'restart_lost', 'scope_changed'})
+GAP_REASONS = frozenset({'disconnect', 'queue_full', 'worker_failure', 'unavailable_edit', 'invalid_event', 'restart_lost', 'scope_changed', 'catchup_incomplete'})
 AUTH_FAILURES = frozenset({'missing_key', 'authentication_failed', 'access_denied'})
 FAILURE_LABELS = {
     'missing_key': 'API key unavailable', 'authentication_failed': 'API authentication rejected',
@@ -35,6 +35,7 @@ FAILURE_LABELS = {
 }
 FAILURE_CODES = frozenset(FAILURE_LABELS)
 GAP_LABELS = {
+    'catchup_incomplete': 'Message catch-up incomplete; some messages may remain unchecked',
     'disconnect': 'Discord disconnected', 'queue_full': 'Queue overflow',
     'worker_failure': 'Moderation worker stopped', 'unavailable_edit': 'Edited message unavailable',
     'invalid_event': 'Unsupported incoming event',
@@ -286,7 +287,9 @@ class HealthMonitor:
             lines += ['', 'INTERRUPTIONS', '-' * 32]
             lines += [GAP_LABELS[reason] + ': ' + str(gaps[reason]) for reason in sorted(gaps)]
             lines += ['Gateway is connected now.']
-        lines += ['', 'Missed checks are not backfilled.', 'Code rules are separate from JEV.',
+        recovery_note = ('Catch-up is bounded; see /mod status for recovery progress.'
+                         if self.store.get_setting('catchup_v1') is not None else 'Missed checks are not backfilled.')
+        lines += ['', recovery_note, 'Code rules are separate from JEV.',
                   'Use !mod status for current state.', 'This notice makes no AI call or moderation action.']
         return panel(title, lines)
 
